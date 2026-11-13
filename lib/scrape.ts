@@ -225,7 +225,7 @@ export function parseListingHtml(html: string, url: URL): Partial<ScrapedListing
   const h1 = meta(html, "x-h1");
   if (h1 && (!r.name || source === "airbnb")) r.name = h1;
   r.image =
-    str(ld?.image) || str(ld?.photo) || meta(html, "og:image") || meta(html, "twitter:image") || meta(html, "x-img");
+    str(ld?.image) || str(ld?.photo) || meta(html, "og:image") || meta(html, "twitter:image") || meta(html, "x-img") || meta(html, "x-img2");
   r.address = addressStr(ld?.address) || meta(html, "x-address");
   r.description =
     meta(html, "og:description") || meta(html, "description") || str(ld?.description);
@@ -260,6 +260,20 @@ export function parseListingHtml(html: string, url: URL): Partial<ScrapedListing
       }
       if (r.review_count == null) {
         const m = rv.match(/(\d[\d.]*)\s*(?:Bewertungen|Bewertung|reviews|review)/i);
+        if (m) r.review_count = num(m[1]) as number | null;
+      }
+    }
+    const txt = meta(html, "x-text");
+    if (txt) {
+      if (r.rating == null) {
+        const m =
+          txt.match(/★\s?(\d[,.]\d{1,2})/) ||
+          txt.match(/(\d[,.]\d{1,2})\s*(?:·|\n)?\s*\d[\d.]*\s*(?:Bewertungen|reviews)/i) ||
+          txt.match(/(?:Gästefavorit|Guest favou?rite)[\s\S]{0,200}?\b([1-5][,.]\d{1,2})\b/i);
+        if (m) r.rating = num(m[1]);
+      }
+      if (r.review_count == null) {
+        const m = txt.match(/(\d[\d.]*)\s*(?:Bewertungen|reviews)\b/i);
         if (m) r.review_count = num(m[1]) as number | null;
       }
     }
@@ -323,11 +337,12 @@ export function parseListingHtml(html: string, url: URL): Partial<ScrapedListing
   }
 
   // Preis aus dem sichtbaren Buchungsbereich (nur per Lesezeichen verfügbar)
-  const priceText = meta(html, "x-price");
+  const priceText = meta(html, "x-price") || (source === "airbnb" ? meta(html, "x-text") : null);
   let totalFromPage: number | null = null;
   if (priceText) {
     const tot = priceText.match(/(?:Gesamtbetrag|Gesamtpreis|insgesamt|Gesamt|Total)\D{0,25}((?:CA\$|C\$|US\$|€|\$|£|CHF)?\s?[\d.,]*\d\s?(?:€|EUR|CAD|USD)?)/i);
-    const pt = tot ? parsePriceText(tot[1]) : null;
+    const forN = priceText.match(/((?:CA\$|C\$|US\$|€|\$|£|CHF)\s?[\d.,]*\d|[\d.,]*\d\s?€)\s*(?:insgesamt\s*)?(?:für|for)\s*\d+\s*(?:Nächte|Nacht|nights?)/i);
+    const pt = forN ? parsePriceText(forN[1]) : tot ? parsePriceText(tot[1]) : null;
     if (pt) {
       totalFromPage = pt.amount;
       currency = currency ?? pt.currency;
