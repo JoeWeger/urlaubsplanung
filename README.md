@@ -44,6 +44,14 @@ kann es in der Karte unter „Details bearbeiten“ ergänzt werden. „↻ Neu 
 Kopierst du den Link aus der Suchergebnisliste bzw. nach Auswahl der Daten, steht der Preis des Zimmers
 im Link (`sr_pri_blocks=…__57549` = 575,49 in der Landeswährung des Hotels, z. B. CAD bei `/hotel/ca/`). Er wird mit dem aktuellen EZB-Kurs in Euro umgerechnet – auch wenn Booking die Seite blockiert.
 
+### Lesezeichen „➕ Urlaubsplanung“ (empfohlen für Foto & Bewertung)
+
+Unter `/lesezeichen` gibt es einen Button für die Lesezeichenleiste. Auf einer Booking-/Airbnb-Seite angeklickt,
+liest er Foto, Bewertung, Anzahl Bewertungen, Adresse und Preis direkt aus deinem Browser (keine Bot-Sperre)
+und öffnet die App, wo du den Stopp auswählst. Bestehende Einträge werden erkannt und können aktualisiert werden.
+
+Beim normalen Link-Einfügen wird bei Sperre zusätzlich der kostenlose Vorschau-Dienst Microlink für das Foto versucht.
+
 ### Optional: Scraping-Dienst für Bewertungen/Bilder
 
 Booking.com blockiert Anfragen von Rechenzentren (auch Vercel) häufig. Dann fehlen Bewertung und Bild.

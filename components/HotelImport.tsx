@@ -26,7 +26,8 @@ export function HotelImport({ stopId }: { stopId: number }) {
         </button>
       </div>
       <p className="mt-1.5 text-xs text-slate-400">
-        Tipp: Link mit Reisedaten kopieren (Check-in/Check-out in der URL), dann wird der Gesamtpreis berechnet.
+        Tipp: Link mit Reisedaten kopieren, dann wird der Gesamtpreis berechnet. Foto & Bewertung fehlen? Nutze das{" "}
+        <a href="/lesezeichen" className="text-sky-700 underline">Lesezeichen „➕ Urlaubsplanung“</a>.
       </p>
       {state?.error && <p className="mt-2 text-sm text-red-600">{state.error}</p>}
       {state?.ok && (

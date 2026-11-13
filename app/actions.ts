@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { query } from "@/lib/db";
-import { scrapeListing } from "@/lib/scrape";
+import { listingFromHtml, scrapeListing, type ScrapedListing } from "@/lib/scrape";
 import { authToken } from "@/lib/auth";
 
 const s = (f: FormData, k: string) => {
@@ -156,23 +156,13 @@ export async function deleteStop(f: FormData) {
 /* ---------- Hotels ---------- */
 export type ImportState = { ok?: boolean; error?: string; warning?: string } | null;
 
-export async function importHotel(_: ImportState, f: FormData): Promise<ImportState> {
-  const stopId = id(f, "stop_id");
-  const raw = s(f, "url");
-  if (!raw) return { error: "Bitte einen Link einfügen." };
-  let url: URL;
-  try {
-    url = new URL(raw.match(/https?:\/\/\S+/)?.[0] ?? raw);
-  } catch {
-    return { error: "Das ist kein gültiger Link." };
-  }
+async function insertHotel(stopId: number, d: ScrapedListing) {
   const stop = (
     await query<{ start_date: string | null; end_date: string | null }>(
       "SELECT start_date, end_date FROM stops WHERE id=$1",
       [stopId],
     )
   )[0];
-  const d = await scrapeListing(url.toString());
   const checkin = d.checkin ?? stop?.start_date ?? null;
   const checkout = d.checkout ?? stop?.end_date ?? null;
   let total = d.price_total;
@@ -185,10 +175,89 @@ export async function importHotel(_: ImportState, f: FormData): Promise<ImportSt
   await query(
     `INSERT INTO hotels (stop_id, url, source, name, image, address, description, price_total, price_per_night, currency, rating, rating_scale, review_count, checkin, checkout, orig_price, orig_currency)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-    [stopId, d.url, d.source, d.name ?? url.hostname, d.image, d.address, d.description, total, perNight, d.currency ?? "EUR", d.rating, d.rating_scale, d.review_count, checkin, checkout, d.orig_price, d.orig_currency],
+    [stopId, d.url, d.source, d.name ?? new URL(d.url).hostname, d.image, d.address, d.description, total, perNight, d.currency ?? "EUR", d.rating, d.rating_scale, d.review_count, checkin, checkout, d.orig_price, d.orig_currency],
   );
+}
+
+/** Neue Daten in ein bestehendes Hotel übernehmen (leere Felder überschreiben nichts) */
+async function applyListing(hotelId: number, d: ScrapedListing) {
+  await query(
+    `UPDATE hotels SET name=COALESCE($2,name), image=COALESCE($3,image), address=COALESCE($4,address), description=COALESCE($5,description),
+       price_per_night=COALESCE($6,price_per_night), price_total=COALESCE($7,price_total), currency=COALESCE($8,currency),
+       rating=COALESCE($9,rating), rating_scale=COALESCE($10,rating_scale), review_count=COALESCE($11,review_count),
+       orig_price=CASE WHEN $7::float8 IS NULL THEN orig_price ELSE $12 END, orig_currency=CASE WHEN $7::float8 IS NULL THEN orig_currency ELSE $13 END,
+       url=COALESCE($14,url) WHERE id=$1`,
+    [hotelId, d.name, d.image, d.address, d.description, d.price_per_night, d.price_total, d.currency, d.rating, d.rating_scale, d.review_count, d.orig_price, d.orig_currency, d.url],
+  );
+}
+
+export async function importHotel(_: ImportState, f: FormData): Promise<ImportState> {
+  const stopId = id(f, "stop_id");
+  const raw = s(f, "url");
+  if (!raw) return { error: "Bitte einen Link einfügen." };
+  let url: URL;
+  try {
+    url = new URL(raw.match(/https?:\/\/\S+/)?.[0] ?? raw);
+  } catch {
+    return { error: "Das ist kein gültiger Link." };
+  }
+  const d = await scrapeListing(url.toString());
+  await insertHotel(stopId, d);
   refresh();
   return { ok: true, warning: d.warning };
+}
+
+/* ---------- Import per Lesezeichen (Daten kommen aus dem Browser des Nutzers) ---------- */
+export type ImportPreview = {
+  listing: ScrapedListing;
+  stops: { id: number; name: string; trip: string; start_date: string | null; end_date: string | null }[];
+  suggestedStop: number | null;
+  existing: { id: number; stop_id: number; name: string | null; stop: string }[];
+};
+
+const pathKey = (u: string) => {
+  try {
+    const x = new URL(u);
+    return x.hostname.replace(/^www\./, "").replace(/^[a-z]{2}\./, "") + x.pathname.replace(/\.[a-z-]+\.html$/, "");
+  } catch {
+    return u;
+  }
+};
+
+export async function previewImport(url: string, html: string): Promise<ImportPreview> {
+  const listing = await listingFromHtml(url, html.slice(0, 500_000));
+  const stops = await query<ImportPreview["stops"][number]>(
+    `SELECT s.id, s.name, t.name AS trip, s.start_date, s.end_date FROM stops s JOIN trips t ON t.id=s.trip_id
+     WHERE t.end_date IS NULL OR t.end_date >= to_char(now() - interval '30 days','YYYY-MM-DD')
+     ORDER BY t.start_date NULLS LAST, s.start_date NULLS LAST, s.id`,
+  );
+  const ci = listing.checkin;
+  const suggested =
+    (ci && stops.find((x) => x.start_date && x.end_date && x.start_date <= ci && ci < x.end_date)?.id) || null;
+  const all = await query<{ id: number; stop_id: number; name: string | null; url: string | null; stop: string }>(
+    "SELECT h.id, h.stop_id, h.name, h.url, s.name AS stop FROM hotels h JOIN stops s ON s.id=h.stop_id",
+  );
+  const key = pathKey(listing.url);
+  const existing = all.filter((h) => h.url && pathKey(h.url) === key).map(({ url: _u, ...rest }) => rest);
+  return { listing, stops, suggestedStop: suggested, existing };
+}
+
+export async function saveImport(f: FormData) {
+  const url = s(f, "url");
+  const html = String(f.get("html") ?? "");
+  if (!url) return;
+  const d = await listingFromHtml(url, html.slice(0, 500_000));
+  const existingId = Number(f.get("existing_id") || 0);
+  let stopId = id(f, "stop_id");
+  if (existingId) {
+    await applyListing(existingId, d);
+    stopId = (await query<{ stop_id: number }>("SELECT stop_id FROM hotels WHERE id=$1", [existingId]))[0]?.stop_id ?? stopId;
+  } else {
+    await insertHotel(stopId, d);
+  }
+  const trip = (await query<{ trip_id: number }>("SELECT trip_id FROM stops WHERE id=$1", [stopId]))[0];
+  refresh();
+  redirect(trip ? `/trips/${trip.trip_id}/stops/${stopId}` : "/");
 }
 
 export async function updateHotel(f: FormData) {
@@ -227,14 +296,7 @@ export async function refreshHotel(f: FormData) {
   const rows = await query<{ url: string | null }>("SELECT url FROM hotels WHERE id=$1", [id(f)]);
   const url = rows[0]?.url;
   if (!url) return;
-  const d = await scrapeListing(url);
-  await query(
-    `UPDATE hotels SET name=COALESCE($2,name), image=COALESCE($3,image), address=COALESCE($4,address), description=COALESCE($5,description),
-       price_per_night=COALESCE($6,price_per_night), price_total=COALESCE($7,price_total), currency=COALESCE($8,currency),
-       rating=COALESCE($9,rating), rating_scale=COALESCE($10,rating_scale), review_count=COALESCE($11,review_count),
-       orig_price=CASE WHEN $7::float8 IS NULL THEN orig_price ELSE $12 END, orig_currency=CASE WHEN $7::float8 IS NULL THEN orig_currency ELSE $13 END WHERE id=$1`,
-    [id(f), d.name, d.image, d.address, d.description, d.price_per_night, d.price_total, d.currency, d.rating, d.rating_scale, d.review_count, d.orig_price, d.orig_currency],
-  );
+  await applyListing(id(f), await scrapeListing(url));
   refresh();
 }
 

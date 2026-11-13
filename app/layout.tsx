@@ -29,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <nav className="flex gap-1 text-sm">
               <Link href="/" className="btn-ghost">Urlaube</Link>
               <Link href="/kalender" className="btn-ghost">Kalender</Link>
+              <Link href="/lesezeichen" className="btn-ghost hidden sm:inline-flex">➕ Lesezeichen</Link>
             </nav>
           </div>
         </header>

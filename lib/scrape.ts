@@ -222,8 +222,11 @@ export function parseListingHtml(html: string, url: URL): Partial<ScrapedListing
     ogTitle?.split(/ · | \| /)[0] ||
     (titleTag ? decodeEntities(titleTag).split(/ – | - | \| /)[0].trim() : null) ||
     null;
-  r.image = str(ld?.image) || str(ld?.photo) || meta(html, "og:image") || meta(html, "twitter:image");
-  r.address = addressStr(ld?.address);
+  const h1 = meta(html, "x-h1");
+  if (h1 && (!r.name || source === "airbnb")) r.name = h1;
+  r.image =
+    str(ld?.image) || str(ld?.photo) || meta(html, "og:image") || meta(html, "twitter:image") || meta(html, "x-img");
+  r.address = addressStr(ld?.address) || meta(html, "x-address");
   r.description =
     meta(html, "og:description") || meta(html, "description") || str(ld?.description);
   if (r.description && r.description.length > 400) r.description = r.description.slice(0, 397) + "…";
@@ -249,6 +252,17 @@ export function parseListingHtml(html: string, url: URL): Partial<ScrapedListing
       const m = html.match(/"(?:reviewCount|visibleReviewCount|reviewsCount)"\s*:\s*"?(\d+)/);
       if (m) r.review_count = Number(m[1]);
     }
+    const rv = meta(html, "x-review");
+    if (rv) {
+      if (r.rating == null) {
+        const m = rv.match(/(\d[,.]\d{1,2})/);
+        if (m) r.rating = num(m[1]);
+      }
+      if (r.review_count == null) {
+        const m = rv.match(/(\d[\d.]*)\s*(?:Bewertungen|Bewertung|reviews|review)/i);
+        if (m) r.review_count = num(m[1]) as number | null;
+      }
+    }
     // Airbnb-Titel enthalten oft nur die Kategorie; besseren Namen aus JSON suchen
     const listingName = html.match(/"listingTitle"\s*:\s*"([^"]{4,120})"/);
     if ((!r.name || /^(Wohnung|Unterkunft|Rental unit|Home|Condo|Loft|Haus)\b/i.test(r.name)) && listingName) {
@@ -258,6 +272,11 @@ export function parseListingHtml(html: string, url: URL): Partial<ScrapedListing
   }
 
   if (source === "booking") {
+    const reviewText = meta(html, "x-review");
+    if (r.rating == null && reviewText) {
+      const m = reviewText.match(/(\d{1,2}[,.]\d)/);
+      if (m) r.rating = num(m[1]);
+    }
     if (r.rating == null) {
       const m = html.match(/data-review-score=["']([\d.,]+)/) ||
         html.match(/"reviewScore"\s*:\s*"?([\d.]+)/) ||
@@ -301,6 +320,29 @@ export function parseListingHtml(html: string, url: URL): Partial<ScrapedListing
       price = p.amount;
       currency = p.currency;
     }
+  }
+
+  // Preis aus dem sichtbaren Buchungsbereich (nur per Lesezeichen verfügbar)
+  const priceText = meta(html, "x-price");
+  let totalFromPage: number | null = null;
+  if (priceText) {
+    const tot = priceText.match(/(?:Gesamtbetrag|Gesamtpreis|insgesamt|Gesamt|Total)\D{0,25}((?:CA\$|C\$|US\$|€|\$|£|CHF)?\s?[\d.,]*\d\s?(?:€|EUR|CAD|USD)?)/i);
+    const pt = tot ? parsePriceText(tot[1]) : null;
+    if (pt) {
+      totalFromPage = pt.amount;
+      currency = currency ?? pt.currency;
+    } else if (price == null) {
+      const night = priceText.match(/((?:CA\$|C\$|US\$|€|\$|£)\s?[\d.,]*\d|[\d.,]*\d\s?€)\s*(?:\/\s*)?(?:pro\s+)?(?:Nacht|night)/i);
+      const pn = night ? parsePriceText(night[1]) : null;
+      if (pn) {
+        price = pn.amount;
+        currency = pn.currency;
+      }
+    }
+  }
+  if (totalFromPage != null) {
+    r.price_total = totalFromPage;
+    r.currency = currency || null;
   }
 
   if (price != null) {
@@ -379,7 +421,9 @@ async function fetchHtml(target: URL): Promise<{ status: number; html: string; f
   }
 }
 
-export async function scrapeListing(rawUrl: string): Promise<ScrapedListing> {
+type Prepared = { url: URL; source: string; base: ScrapedListing; urlPrice: { total: number; currency: string } | null; n: number | null };
+
+async function prepare(rawUrl: string): Promise<Prepared> {
   const url = new URL(rawUrl.trim());
   const source = detectSource(url);
   const { checkin, checkout } = datesFromUrl(url);
@@ -391,7 +435,6 @@ export async function scrapeListing(rawUrl: string): Promise<ScrapedListing> {
     const rate = await getRate(urlPriceRaw.currency, "EUR");
     if (rate) urlPrice = { total: urlPriceRaw.total * rate, currency: "EUR" };
   }
-
   const base: ScrapedListing = {
     url: url.toString(),
     source,
@@ -411,42 +454,93 @@ export async function scrapeListing(rawUrl: string): Promise<ScrapedListing> {
     checkout,
     fetched: false,
   };
+  return { url, source, base, urlPrice, n };
+}
 
-  const missing = (r: ScrapedListing) =>
-    [r.price_total == null && r.price_per_night == null ? "Preis" : null, r.rating == null ? "Bewertung" : null]
-      .filter(Boolean)
-      .join(" & ");
-
-  try {
-    const { status, html, finalUrl } = await fetchHtml(cleanUrl(url, source));
-    if (looksBlocked(status, html) || status >= 400) {
-      const m = missing(base);
-      return {
-        ...base,
-        warning: `${sourceName(source)} hat die automatische Abfrage blockiert${m ? ` – ${m} bitte unter „Details bearbeiten“ ergänzen` : ""}.`,
-      };
-    }
-    const parsed = parseListingHtml(html, new URL(finalUrl));
-    const merged: ScrapedListing = { ...base, fetched: true };
-    for (const [k, v] of Object.entries(parsed)) {
-      if (v == null || v === "") continue;
-      // Preis aus dem Link (gewähltes Zimmer + Daten) ist genauer als "ab"-Preise der Seite
-      if (urlPrice && (k === "price_per_night" || k === "currency")) continue;
-      (merged as Record<string, unknown>)[k] = v;
-    }
-    if (merged.price_total == null && merged.price_per_night != null && n) {
-      merged.price_total = Math.round(merged.price_per_night * n);
-    }
-    const m = missing(merged);
-    if (m) merged.warning = `${m} nicht gefunden – bitte unter „Details bearbeiten“ ergänzen.`;
-    return merged;
-  } catch (e) {
-    const m = missing(base);
-    return {
-      ...base,
-      warning: `Seite konnte nicht geladen werden (${(e as Error).name === "AbortError" ? "Zeitüberschreitung" : "Netzwerkfehler"})${m ? ` – ${m} bitte ergänzen` : ""}.`,
-    };
+function merge(p: Prepared, parsed: Partial<ScrapedListing>): ScrapedListing {
+  const merged: ScrapedListing = { ...p.base, fetched: true };
+  for (const [k, v] of Object.entries(parsed)) {
+    if (v == null || v === "") continue;
+    // Preis aus dem Link (gewähltes Zimmer + Daten) ist genauer als "ab"-Preise der Seite
+    if (p.urlPrice && (k === "price_per_night" || k === "currency")) continue;
+    (merged as Record<string, unknown>)[k] = v;
   }
+  if (merged.price_total == null && merged.price_per_night != null && p.n) {
+    merged.price_total = Math.round(merged.price_per_night * p.n);
+  }
+  return merged;
+}
+
+const missing = (r: ScrapedListing) =>
+  [
+    r.price_total == null && r.price_per_night == null ? "Preis" : null,
+    r.rating == null ? "Bewertung" : null,
+    r.image == null ? "Foto" : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+/** Daten, die das Lesezeichen direkt aus dem Browser des Nutzers schickt */
+export async function listingFromHtml(rawUrl: string, html: string): Promise<ScrapedListing> {
+  const p = await prepare(rawUrl);
+  const merged = merge(p, parseListingHtml(html, p.url));
+  const m = missing(merged);
+  if (m) merged.warning = `${m} nicht gefunden – bitte unter „Details bearbeiten“ ergänzen.`;
+  return merged;
+}
+
+/** Fallback: kostenloser Vorschau-Dienst (Microlink) für Foto/Titel, wenn die Seite blockiert */
+async function microlink(target: URL): Promise<Partial<ScrapedListing> | null> {
+  try {
+    const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(target.toString())}`, {
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as {
+      status?: string;
+      data?: { title?: string; description?: string; image?: { url?: string } };
+    };
+    if (j.status !== "success" || !j.data) return null;
+    const out: Partial<ScrapedListing> = {};
+    const img = j.data.image?.url;
+    if (img && /^https?:/.test(img) && !/(^|\.)(booking\.com|airbnb\.[a-z.]+)$/i.test(new URL(img).hostname)) out.image = img;
+    const title = j.data.title?.trim();
+    if (title && !/booking\.com|airbnb|challenge|captcha|access denied|just a moment/i.test(title)) {
+      out.name = title.split(/ · | \| | – | - /)[0].trim();
+      if (j.data.description) out.description = j.data.description.slice(0, 400);
+    }
+    return Object.keys(out).length ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function scrapeListing(rawUrl: string): Promise<ScrapedListing> {
+  const p = await prepare(rawUrl);
+  const target = cleanUrl(p.url, p.source);
+  let blocked = false;
+  try {
+    const { status, html, finalUrl } = await fetchHtml(target);
+    if (looksBlocked(status, html) || status >= 400) {
+      blocked = true;
+    } else {
+      const merged = merge(p, parseListingHtml(html, new URL(finalUrl)));
+      const m = missing(merged);
+      if (m) merged.warning = `${m} nicht gefunden – bitte unter „Details bearbeiten“ ergänzen.`;
+      return merged;
+    }
+  } catch {
+    blocked = true;
+  }
+
+  // Seite blockiert → Vorschau-Dienst versuchen
+  const extra = blocked ? await microlink(target) : null;
+  const result: ScrapedListing = extra ? { ...merge(p, extra), fetched: false } : p.base;
+  const m = missing(result);
+  if (m) {
+    result.warning = `${sourceName(p.source)} blockiert die automatische Abfrage – ${m} fehlt. Tipp: Auf der Seite den Lesezeichen-Button „➕ Urlaubsplanung“ klicken, dann wird alles übernommen.`;
+  }
+  return result;
 }
 
 function sourceName(s: string) {
