@@ -3,6 +3,8 @@
  * (dort gibt es keine Bot-Sperre), sammelt Meta-Tags, JSON-LD und ein paar
  * sichtbare Texte und öffnet damit die Import-Seite der App.
  */
+export const BOOKMARKLET_VERSION = 3;
+
 export function bookmarkletCode(origin: string): string {
   const js = `
 (()=>{try{
@@ -12,6 +14,7 @@ export function bookmarkletCode(origin: string): string {
   const t=s=>{const e=document.querySelector(s);return e?e.innerText.replace(/\\s+/g,' ').trim().slice(0,400):''};
   const x=(n,v)=>{if(v)h+='<meta name="'+n+'" content="'+String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')+'">'};
   x('x-review',t('[data-testid="review-score-component"]')||t('[data-testid="review-score-right-component"]')||t('[data-testid="pdp-reviews-highlight-banner-host-rating"]')||t('[data-section-id="GUEST_FAVORITE_BANNER"]')||t('[data-section-id="OVERVIEW_DEFAULT_V2"]')||t('a[href*="/reviews"]'));
+  x('x-bm','${BOOKMARKLET_VERSION}');
   x('x-h1',t('h1'));
   x('x-address',t('[data-testid="PropertyHeaderAddressDesktop-wrapper"]')||t('[data-node_tt_id="location_score_tooltip"]'));
   x('x-price',t('[data-section-id="BOOK_IT_SIDEBAR"]')||t('[data-testid="book-it-default"]'));

@@ -42,6 +42,12 @@ export function ImportClient() {
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <h1 className="text-2xl font-bold">Unterkunft übernehmen</h1>
+      {preview.outdated && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+          Dein Lesezeichen ist eine ältere Version und liest weniger aus. Bitte altes Lesezeichen löschen und{" "}
+          <Link href="/lesezeichen" className="font-medium underline">hier neu einrichten</Link>.
+        </div>
+      )}
       <div className="card flex flex-col overflow-hidden sm:flex-row">
         <div className="aspect-video bg-slate-100 sm:aspect-auto sm:w-56 sm:shrink-0">
           {l.image ? (
@@ -73,8 +79,25 @@ export function ImportClient() {
             </div>
           </div>
           {l.warning && <p className="mt-2 text-xs text-amber-600">{l.warning}</p>}
+          {l.rating == null && l.source === "airbnb" && /★\s?(Neu|New)/i.test(preview.debug) && (
+            <p className="mt-1 text-xs text-slate-500">Diese Unterkunft ist neu und hat noch keine Bewertungen.</p>
+          )}
         </div>
       </div>
+
+      {(l.price_total == null || l.rating == null) && (
+        <details className="card p-4 text-sm">
+          <summary className="cursor-pointer text-slate-500">Rohdaten anzeigen (zum Weiterschicken, falls etwas fehlt)</summary>
+          <button
+            type="button"
+            className="btn-ghost mt-2 px-2 py-1 text-xs"
+            onClick={() => navigator.clipboard.writeText(preview.debug)}
+          >
+            📋 Kopieren
+          </button>
+          <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-slate-50 p-3 text-xs whitespace-pre-wrap text-slate-600">{preview.debug}</pre>
+        </details>
+      )}
 
       {preview.existing.length > 0 && (
         <div className="card p-4">

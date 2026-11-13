@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { query } from "@/lib/db";
 import { listingFromHtml, scrapeListing, type ScrapedListing } from "@/lib/scrape";
 import { authToken } from "@/lib/auth";
+import { BOOKMARKLET_VERSION } from "@/lib/bookmarklet";
 
 const s = (f: FormData, k: string) => {
   const v = f.get(k);
@@ -213,6 +214,8 @@ export type ImportPreview = {
   stops: { id: number; name: string; trip: string; start_date: string | null; end_date: string | null }[];
   suggestedStop: number | null;
   existing: { id: number; stop_id: number; name: string | null; stop: string }[];
+  outdated: boolean;
+  debug: string;
 };
 
 const pathKey = (u: string) => {
@@ -239,7 +242,19 @@ export async function previewImport(url: string, html: string): Promise<ImportPr
   );
   const key = pathKey(listing.url);
   const existing = all.filter((h) => h.url && pathKey(h.url) === key).map(({ url: _u, ...rest }) => rest);
-  return { listing, stops, suggestedStop: suggested, existing };
+  const metaVal = (n: string) => {
+    const m = html.match(new RegExp(`<meta name="${n}" content="([^"]*)"`));
+    return m ? m[1].replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&amp;/g, "&") : "";
+  };
+  const outdated = Number(metaVal("x-bm") || 0) < BOOKMARKLET_VERSION;
+  const debug = [
+    `Lesezeichen-Version: ${metaVal("x-bm") || "alt"}`,
+    `og:title: ${html.match(/og:title" content="([^"]*)"/)?.[1] ?? "–"}`,
+    `Bewertung: ${metaVal("x-review") || "–"}`,
+    `Preisbereich: ${metaVal("x-price") || "–"}`,
+    `Seitentext:\n${metaVal("x-text").slice(0, 5000) || "–"}`,
+  ].join("\n\n");
+  return { listing, stops, suggestedStop: suggested, existing, outdated, debug };
 }
 
 export async function saveImport(f: FormData) {

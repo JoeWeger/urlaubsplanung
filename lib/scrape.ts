@@ -209,6 +209,37 @@ function nights(ci: string | null, co: string | null): number | null {
   return n > 0 ? n : null;
 }
 
+const PRICE_RE = /(CA\$|C\$|US\$|€|EUR|\$|£|CHF)\s?(\d[\d.,]*\d|\d)|(\d[\d.,]*\d|\d)\s?(€|EUR|CA\$|\$|CHF)/g;
+
+/** Sucht im sichtbaren Text nach Gesamtpreis bzw. Preis pro Nacht (Airbnb/Booking, de/en) */
+export function pricesFromText(raw: string): {
+  total: { amount: number; currency: string | null } | null;
+  perNight: { amount: number; currency: string | null } | null;
+} {
+  const text = raw.replace(/[   ]/g, " ");
+  type P = { amount: number; currency: string | null } | null;
+  let gesamt: P = null;
+  let forNights: P = null;
+  let perNight: P = null;
+  for (const m of text.matchAll(PRICE_RE)) {
+    const amount = num(m[2] ?? m[3]);
+    if (amount == null || amount < 5) continue;
+    const sym = m[1] ?? m[4];
+    const currency = CURRENCY_SYMBOLS[sym] || (sym.length === 3 ? sym : null);
+    const before = text.slice(Math.max(0, m.index! - 40), m.index!);
+    const after = text.slice(m.index! + m[0].length, m.index! + m[0].length + 40);
+    const val = { amount, currency };
+    if (/(Gesamtbetrag|Gesamtpreis|Gesamtsumme|Gesamt|Total)[^€$\d]{0,30}$/i.test(before)) {
+      gesamt = val; // letzter Treffer = Endbetrag inkl. Gebühren
+    } else if (/^\s*(?:[A-Z]{3}\s*)?(insgesamt|gesamt|total|in total|(für|for)\s*\d+\s*(Nächte|Nacht|nights?))/i.test(after)) {
+      forNights ??= val;
+    } else if (!perNight && /^\s*(\/\s*|pro\s+|per\s+)?(Nacht|night)\b/i.test(after)) {
+      perNight = val;
+    }
+  }
+  return { total: gesamt ?? forNights, perNight };
+}
+
 export function parseListingHtml(html: string, url: URL): Partial<ScrapedListing> {
   const source = detectSource(url);
   const ld = pickLodging(collectJsonLd(html));
@@ -337,22 +368,16 @@ export function parseListingHtml(html: string, url: URL): Partial<ScrapedListing
   }
 
   // Preis aus dem sichtbaren Buchungsbereich (nur per Lesezeichen verfügbar)
-  const priceText = meta(html, "x-price") || (source === "airbnb" ? meta(html, "x-text") : null);
   let totalFromPage: number | null = null;
-  if (priceText) {
-    const tot = priceText.match(/(?:Gesamtbetrag|Gesamtpreis|insgesamt|Gesamt|Total)\D{0,25}((?:CA\$|C\$|US\$|€|\$|£|CHF)?\s?[\d.,]*\d\s?(?:€|EUR|CAD|USD)?)/i);
-    const forN = priceText.match(/((?:CA\$|C\$|US\$|€|\$|£|CHF)\s?[\d.,]*\d|[\d.,]*\d\s?€)\s*(?:insgesamt\s*)?(?:für|for)\s*\d+\s*(?:Nächte|Nacht|nights?)/i);
-    const pt = forN ? parsePriceText(forN[1]) : tot ? parsePriceText(tot[1]) : null;
-    if (pt) {
-      totalFromPage = pt.amount;
-      currency = currency ?? pt.currency;
-    } else if (price == null) {
-      const night = priceText.match(/((?:CA\$|C\$|US\$|€|\$|£)\s?[\d.,]*\d|[\d.,]*\d\s?€)\s*(?:\/\s*)?(?:pro\s+)?(?:Nacht|night)/i);
-      const pn = night ? parsePriceText(night[1]) : null;
-      if (pn) {
-        price = pn.amount;
-        currency = pn.currency;
-      }
+  for (const priceText of [meta(html, "x-price"), source === "airbnb" ? meta(html, "x-text") : null]) {
+    if (!priceText || totalFromPage != null) continue;
+    const found = pricesFromText(priceText);
+    if (found.total) {
+      totalFromPage = found.total.amount;
+      currency = currency ?? found.total.currency;
+    } else if (price == null && found.perNight) {
+      price = found.perNight.amount;
+      currency = found.perNight.currency;
     }
   }
   if (totalFromPage != null) {
