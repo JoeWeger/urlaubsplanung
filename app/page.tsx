@@ -4,6 +4,7 @@ import { getAllStops, getTrips, type Stop, type Trip } from "@/lib/data";
 import { fmtRange, nightsBetween, toISODate } from "@/lib/format";
 import { SetupNotice } from "@/components/SetupNotice";
 import { TripFields } from "@/components/TripForm";
+import { findGaps } from "@/lib/gaps";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,7 @@ export default async function Home() {
 function TripCard({ trip, stops, today }: { trip: Trip; stops: Stop[]; today: string }) {
   const nights = nightsBetween(trip.start_date, trip.end_date);
   const daysUntil = trip.start_date ? nightsBetween(today, trip.start_date) : null;
+  const open = findGaps(trip.start_date, trip.end_date, stops).reduce((a, g) => a + g.nights, 0);
   return (
     <Link href={`/trips/${trip.id}`} className="card group overflow-hidden transition hover:shadow-md">
       <div className="h-2" style={{ background: trip.color ?? "#0ea5e9" }} />
@@ -85,6 +87,9 @@ function TripCard({ trip, stops, today }: { trip: Trip; stops: Stop[]; today: st
               </span>
             ))}
           </div>
+        )}
+        {open > 0 && (
+          <p className="mt-3 text-xs font-medium text-red-600">⚠ {open} {open === 1 ? "Nacht" : "Nächte"} noch ohne Plan</p>
         )}
       </div>
     </Link>

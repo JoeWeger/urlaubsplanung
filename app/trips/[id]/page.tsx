@@ -4,22 +4,27 @@ import {
   createFlight,
   createStop,
   deleteFlight,
+  deleteFlightFile,
+  uploadFlightFiles,
   deleteTrip,
   updateFlight,
   updateTrip,
 } from "@/app/actions";
 import {
   getActivitiesForTrip,
+  getFlightFiles,
   getFlights,
   getHotelsForTrip,
   getStops,
   getTrip,
   type Flight,
+  type FlightFile,
 } from "@/lib/data";
 import { addDays, fmtDateTime, fmtMoney, fmtRange, nightsBetween, toISODate } from "@/lib/format";
 import { Month, monthsBetween, type CalEvent } from "@/components/Calendar";
 import { TripFields } from "@/components/TripForm";
-import { ConfirmButton, SubmitButton } from "@/components/ui";
+import { AutoUpload, ConfirmButton, SubmitButton } from "@/components/ui";
+import { findGaps, type Gap } from "@/lib/gaps";
 
 export const dynamic = "force-dynamic";
 
@@ -27,12 +32,20 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   const tripId = Number((await params).id);
   const trip = await getTrip(tripId);
   if (!trip) notFound();
-  const [stops, flights, hotels, activities] = await Promise.all([
+  const [stops, flights, hotels, activities, files] = await Promise.all([
     getStops(tripId),
     getFlights(tripId),
     getHotelsForTrip(tripId),
     getActivitiesForTrip(tripId),
+    getFlightFiles(tripId),
   ]);
+  const gaps = findGaps(trip.start_date, trip.end_date, stops);
+  const openNights = gaps.reduce((a, g) => a + g.nights, 0);
+  type RouteItem = { kind: "stop"; key: string; idx: number } | { kind: "gap"; key: string; gap: Gap };
+  const route: RouteItem[] = [
+    ...stops.map((s, idx) => ({ kind: "stop" as const, key: s.start_date ?? "9999", idx })),
+    ...gaps.map((gap) => ({ kind: "gap" as const, key: gap.start, gap })),
+  ].sort((a, b) => a.key.localeCompare(b.key) || (a.kind === "gap" ? -1 : 1));
   const color = trip.color ?? "#0ea5e9";
   const nights = nightsBetween(trip.start_date, trip.end_date);
 
@@ -62,6 +75,13 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
         color: "#475569",
         kind: "flight",
       })),
+    ...gaps.map<CalEvent>((g) => ({
+      start: g.start,
+      end: addDays(g.end, -1),
+      label: "Offen",
+      color: "#dc2626",
+      kind: "gap",
+    })),
     ...activities
       .filter((a) => a.date)
       .map<CalEvent>((a) => ({
@@ -118,12 +138,22 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         {/* Route / Stopps */}
         <section>
-          <h2 className="h2 mb-3">Route</h2>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="h2">Route</h2>
+            {openNights > 0 ? (
+              <span className="chip bg-red-50 text-red-700">⚠ {openNights} {openNights === 1 ? "Nacht" : "Nächte"} noch ohne Plan</span>
+            ) : stops.length > 0 && trip.start_date && trip.end_date ? (
+              <span className="chip bg-emerald-50 text-emerald-700">✓ Alle Nächte geplant</span>
+            ) : null}
+          </div>
           <div className="relative space-y-3">
             {stops.length === 0 && (
               <div className="card p-6 text-center text-sm text-slate-500">Noch keine Stopps. Füge z. B. „Montreal“ hinzu.</div>
             )}
-            {stops.map((s, i) => {
+            {route.map((item) => {
+              if (item.kind === "gap") return <GapCard key={`gap-${item.key}`} gap={item.gap} tripId={trip.id} />;
+              const i = item.idx;
+              const s = stops[i];
               const hs = hotels.filter((h) => h.stop_id === s.id);
               const acts = activities.filter((a) => a.stop_id === s.id);
               const bookedHotel = hs.find((h) => h.status === "booked");
@@ -197,7 +227,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
           <div className="space-y-3">
             {flights.length === 0 && <div className="card p-4 text-sm text-slate-500">Noch keine Flüge eingetragen.</div>}
             {flights.map((f) => (
-              <FlightCard key={f.id} f={f} />
+              <FlightCard key={f.id} f={f} files={files.filter((x) => x.flight_id === f.id)} />
             ))}
             <details className="card">
               <summary className="btn-ghost w-full justify-start px-4 py-3">＋ Flug hinzufügen</summary>
@@ -277,11 +307,15 @@ function FlightFields({ f }: { f?: Flight }) {
         <label className="label">Notizen</label>
         <input name="notes" defaultValue={f?.notes ?? ""} placeholder="Gepäck, Sitzplatz …" className="input" />
       </div>
+      <div className="col-span-2">
+        <label className="label">{f ? "Weitere Dokumente (PDF/Bild, max. 4 MB)" : "Ticket / Bestätigung (PDF/Bild, max. 4 MB)"}</label>
+        <input type="file" name="files" accept="application/pdf,image/*" multiple className="input file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-2 file:py-1 file:text-xs" />
+      </div>
     </div>
   );
 }
 
-function FlightCard({ f }: { f: Flight }) {
+function FlightCard({ f, files }: { f: Flight; files: FlightFile[] }) {
   return (
     <div className="card p-4">
       <div className="flex items-center justify-between gap-2">
@@ -299,6 +333,23 @@ function FlightCard({ f }: { f: Flight }) {
         <div><div className="text-slate-400">Ankunft</div>{fmtDateTime(f.arrive_at)}</div>
       </div>
       {f.notes && <p className="mt-2 text-xs text-slate-500">{f.notes}</p>}
+      <div className="mt-3 space-y-1">
+        {files.map((file) => (
+          <div key={file.id} className="flex items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5 text-sm">
+            <span>{file.mime?.startsWith("image/") ? "🖼" : "📄"}</span>
+            <a href={`/api/files/${file.id}`} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate text-sky-700 hover:underline">
+              {file.filename}
+            </a>
+            {file.size != null && <span className="text-[11px] text-slate-400">{Math.max(1, Math.round(file.size / 1024))} KB</span>}
+            <a href={`/api/files/${file.id}?download`} className="text-xs text-slate-500 hover:text-slate-800" title="Herunterladen">⬇</a>
+            <form action={deleteFlightFile}>
+              <input type="hidden" name="id" value={file.id} />
+              <ConfirmButton className="cursor-pointer text-xs text-slate-400 hover:text-red-600" message={`${file.filename} löschen?`}>✕</ConfirmButton>
+            </form>
+          </div>
+        ))}
+        <AutoUpload action={uploadFlightFiles} id={f.id} />
+      </div>
       <div className="mt-2 flex flex-wrap items-center gap-1">
         {f.link && (
           <a href={f.link} target="_blank" rel="noopener noreferrer" className="btn-ghost px-2 py-1 text-xs text-sky-700">
@@ -321,5 +372,31 @@ function FlightCard({ f }: { f: Flight }) {
         </details>
       </div>
     </div>
+  );
+}
+
+function GapCard({ gap, tripId }: { gap: Gap; tripId: number }) {
+  return (
+    <details className="rounded-2xl border-2 border-dashed border-red-300 bg-red-50/60">
+      <summary className="flex cursor-pointer items-center gap-4 p-4">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-dashed border-red-300 text-lg text-red-400">?</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="font-semibold text-red-700">Noch nicht geplant</h3>
+            <span className="text-sm text-red-600">
+              {fmtRange(gap.start, gap.end)} · {gap.nights} {gap.nights === 1 ? "Nacht" : "Nächte"}
+            </span>
+          </div>
+          <p className="text-xs text-red-500">Hier fehlt noch ein Ort / eine Unterkunft. Klicken, um einen Stopp für diese Zeit anzulegen.</p>
+        </div>
+      </summary>
+      <form action={createStop} className="grid gap-3 px-4 pb-4 sm:grid-cols-[1fr_auto_auto_auto]">
+        <input type="hidden" name="trip_id" value={tripId} />
+        <input name="name" required placeholder="Ort, z. B. Ottawa" className="input" />
+        <input type="date" name="start_date" defaultValue={gap.start} className="input" />
+        <input type="date" name="end_date" defaultValue={gap.end} className="input" />
+        <SubmitButton>Stopp anlegen</SubmitButton>
+      </form>
+    </details>
   );
 }

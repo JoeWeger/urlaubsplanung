@@ -87,6 +87,15 @@ CREATE TABLE IF NOT EXISTS hotels (
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS flight_files (
+  id SERIAL PRIMARY KEY,
+  flight_id INTEGER NOT NULL REFERENCES flights(id) ON DELETE CASCADE,
+  filename TEXT NOT NULL,
+  mime TEXT,
+  size INTEGER,
+  data BYTEA NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS activities (
   id SERIAL PRIMARY KEY,
   stop_id INTEGER NOT NULL REFERENCES stops(id) ON DELETE CASCADE,

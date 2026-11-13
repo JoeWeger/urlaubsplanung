@@ -79,11 +79,39 @@ const flightFields = (f: FormData) => [
   s(f, "notes"),
 ];
 
+const MAX_FILE = 4 * 1024 * 1024;
+
+async function saveFlightFiles(flightId: number, f: FormData) {
+  const files = f.getAll("files").filter((x): x is File => x instanceof File && x.size > 0);
+  for (const file of files) {
+    if (file.size > MAX_FILE) throw new Error(`${file.name} ist größer als 4 MB.`);
+    const buf = Buffer.from(await file.arrayBuffer());
+    await query("INSERT INTO flight_files (flight_id, filename, mime, size, data) VALUES ($1,$2,$3,$4,$5)", [
+      flightId,
+      file.name || "Dokument.pdf",
+      file.type || "application/pdf",
+      file.size,
+      buf,
+    ]);
+  }
+}
+
 export async function createFlight(f: FormData) {
-  await query(
-    "INSERT INTO flights (trip_id, airline, flight_no, from_airport, to_airport, depart_at, arrive_at, booking_ref, price, link, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+  const rows = await query<{ id: number }>(
+    "INSERT INTO flights (trip_id, airline, flight_no, from_airport, to_airport, depart_at, arrive_at, booking_ref, price, link, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id",
     [id(f, "trip_id"), ...flightFields(f)],
   );
+  await saveFlightFiles(rows[0].id, f);
+  refresh();
+}
+
+export async function uploadFlightFiles(f: FormData) {
+  await saveFlightFiles(id(f), f);
+  refresh();
+}
+
+export async function deleteFlightFile(f: FormData) {
+  await query("DELETE FROM flight_files WHERE id=$1", [id(f)]);
   refresh();
 }
 
@@ -92,6 +120,7 @@ export async function updateFlight(f: FormData) {
     "UPDATE flights SET airline=$2, flight_no=$3, from_airport=$4, to_airport=$5, depart_at=$6, arrive_at=$7, booking_ref=$8, price=$9, link=$10, notes=$11 WHERE id=$1",
     [id(f), ...flightFields(f)],
   );
+  await saveFlightFiles(id(f), f);
   refresh();
 }
 

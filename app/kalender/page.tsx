@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getAllStops, getTrips } from "@/lib/data";
 import { addDays, toISODate } from "@/lib/format";
+import { findGaps } from "@/lib/gaps";
 import { Month, type CalEvent } from "@/components/Calendar";
 import { SetupNotice } from "@/components/SetupNotice";
 
@@ -33,6 +34,16 @@ export default async function KalenderPage({ searchParams }: { searchParams: Pro
           href: `/trips/${s.trip_id}/stops/${s.id}`,
           kind: "stop",
         })),
+      ...trips.flatMap((t) =>
+        findGaps(t.start_date, t.end_date, stops.filter((s) => s.trip_id === t.id)).map<CalEvent>((g) => ({
+          start: g.start,
+          end: addDays(g.end, -1),
+          label: "Offen",
+          color: "#dc2626",
+          href: `/trips/${t.id}`,
+          kind: "gap",
+        })),
+      ),
     ];
   } catch (e) {
     return <SetupNotice error={(e as Error).message} />;

@@ -112,3 +112,11 @@ export const getActivitiesForTrip = (tripId: number) =>
     "SELECT a.* FROM activities a JOIN stops s ON s.id=a.stop_id WHERE s.trip_id=$1 ORDER BY a.date NULLS LAST, a.time NULLS LAST, a.id",
     [tripId],
   );
+
+export type FlightFile = { id: number; flight_id: number; filename: string; mime: string | null; size: number | null };
+
+export const getFlightFiles = (tripId: number) =>
+  query<FlightFile>(
+    "SELECT ff.id, ff.flight_id, ff.filename, ff.mime, ff.size FROM flight_files ff JOIN flights f ON f.id=ff.flight_id WHERE f.trip_id=$1 ORDER BY ff.id",
+    [tripId],
+  );
