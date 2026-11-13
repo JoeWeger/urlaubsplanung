@@ -176,14 +176,16 @@ export async function importHotel(_: ImportState, f: FormData): Promise<ImportSt
   const checkin = d.checkin ?? stop?.start_date ?? null;
   const checkout = d.checkout ?? stop?.end_date ?? null;
   let total = d.price_total;
-  if (total == null && d.price_per_night != null && checkin && checkout) {
-    const nn = Math.round((Date.parse(checkout) - Date.parse(checkin)) / 86400000);
-    if (nn > 0) total = Math.round(d.price_per_night * nn);
+  let perNight = d.price_per_night;
+  const nn = checkin && checkout ? Math.round((Date.parse(checkout) - Date.parse(checkin)) / 86400000) : 0;
+  if (nn > 0) {
+    if (total == null && perNight != null) total = Math.round(perNight * nn);
+    if (perNight == null && total != null) perNight = Math.round((total / nn) * 100) / 100;
   }
   await query(
     `INSERT INTO hotels (stop_id, url, source, name, image, address, description, price_total, price_per_night, currency, rating, rating_scale, review_count, checkin, checkout)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-    [stopId, d.url, d.source, d.name ?? url.hostname, d.image, d.address, d.description, total, d.price_per_night, d.currency ?? "EUR", d.rating, d.rating_scale, d.review_count, checkin, checkout],
+    [stopId, d.url, d.source, d.name ?? url.hostname, d.image, d.address, d.description, total, perNight, d.currency ?? "EUR", d.rating, d.rating_scale, d.review_count, checkin, checkout],
   );
   refresh();
   return { ok: true, warning: d.warning };
@@ -224,7 +226,6 @@ export async function refreshHotel(f: FormData) {
   const url = rows[0]?.url;
   if (!url) return;
   const d = await scrapeListing(url);
-  if (!d.fetched) return;
   await query(
     `UPDATE hotels SET name=COALESCE($2,name), image=COALESCE($3,image), address=COALESCE($4,address), description=COALESCE($5,description),
        price_per_night=COALESCE($6,price_per_night), price_total=COALESCE($7,price_total), currency=COALESCE($8,currency),

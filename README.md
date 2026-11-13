@@ -38,3 +38,17 @@ npm run dev
 Booking.com und Airbnb ändern ihr HTML häufig und blockieren teils Anfragen von Servern.
 Das Auslesen ist daher „best effort“: Fehlt etwas (meist der Preis, der von den Reisedaten abhängt),
 kann es in der Karte unter „Details bearbeiten“ ergänzt werden. „↻ Neu auslesen“ versucht es erneut.
+
+### Preis bei Booking.com
+
+Kopierst du den Link aus der Suchergebnisliste bzw. nach Auswahl der Daten, steht der Preis des Zimmers
+im Link (`sr_pri_blocks=…__57549` = 575,49). Der wird immer übernommen – auch wenn Booking die Seite blockiert.
+
+### Optional: Scraping-Dienst für Bewertungen/Bilder
+
+Booking.com blockiert Anfragen von Rechenzentren (auch Vercel) häufig. Dann fehlen Bewertung und Bild.
+Abhilfe: einen Scraping-Dienst (z. B. ScraperAPI, ScrapingBee) als Umgebungsvariable eintragen:
+
+```
+SCRAPE_PROXY_URL=https://api.scraperapi.com/?api_key=DEIN_KEY&country_code=de&url={url}
+```

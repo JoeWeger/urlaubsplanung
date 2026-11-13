@@ -309,10 +309,77 @@ export function parseListingHtml(html: string, url: URL): Partial<ScrapedListing
   return r;
 }
 
+/**
+ * Booking.com schreibt den Preis des gewählten Zimmers direkt in den Link:
+ *   sr_pri_blocks=<blockId>__<Preis in Cent>  (bei sb_price_type=total = Gesamtpreis)
+ * Mehrere Zimmer sind durch Komma getrennt.
+ */
+export function bookingPriceFromUrl(url: URL): { total: number; currency: string } | null {
+  const p = url.searchParams;
+  const raw = p.get("sr_pri_blocks") || p.get("pri_blocks");
+  if (!raw) return null;
+  let cents = 0;
+  for (const block of raw.split(",")) {
+    const m = block.match(/__(\d+)$/);
+    if (m) cents += Number(m[1]);
+  }
+  if (!cents) return null;
+  const currency = (p.get("selected_currency") || p.get("currency") || "EUR").toUpperCase();
+  return { total: Math.round(cents) / 100, currency: /^[A-Z]{3}$/.test(currency) ? currency : "EUR" };
+}
+
+/** Tracking-Parameter entfernen – nur was für die Seite relevant ist */
+function cleanUrl(url: URL, source: string): URL {
+  if (source !== "booking") return url;
+  const keep = ["checkin", "checkout", "group_adults", "group_children", "no_rooms", "selected_currency"];
+  const u = new URL(url.origin + url.pathname);
+  for (const k of keep) {
+    const v = url.searchParams.get(k);
+    if (v) u.searchParams.set(k, v);
+  }
+  u.searchParams.set("lang", "de");
+  return u;
+}
+
+function looksBlocked(status: number, html: string): boolean {
+  if (status === 202 || status === 403 || status === 429) return true;
+  const hasData = /og:title|application\/ld\+json/i.test(html);
+  return !hasData && /captcha|challenge|AwsWaf|Access Denied|px-captcha|bot/i.test(html);
+}
+
+async function fetchHtml(target: URL): Promise<{ status: number; html: string; finalUrl: string }> {
+  // Optional: Scraping-Dienst, falls die Plattform Server-Anfragen blockiert,
+  // z. B. SCRAPE_PROXY_URL="https://api.scraperapi.com/?api_key=KEY&country_code=de&url={url}"
+  const tpl = process.env.SCRAPE_PROXY_URL;
+  const fetchUrl = tpl ? tpl.replace("{url}", encodeURIComponent(target.toString())) : target.toString();
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), tpl ? 45000 : 12000);
+  try {
+    const res = await fetch(fetchUrl, {
+      signal: ctrl.signal,
+      redirect: "follow",
+      headers: tpl
+        ? {}
+        : {
+            "User-Agent":
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+          },
+    });
+    const html = await res.text();
+    return { status: res.status, html, finalUrl: tpl ? target.toString() : res.url || target.toString() };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export async function scrapeListing(rawUrl: string): Promise<ScrapedListing> {
   const url = new URL(rawUrl.trim());
   const source = detectSource(url);
   const { checkin, checkout } = datesFromUrl(url);
+  const n = nights(checkin, checkout);
+  const urlPrice = source === "booking" ? bookingPriceFromUrl(url) : null;
 
   const base: ScrapedListing = {
     url: url.toString(),
@@ -321,9 +388,9 @@ export async function scrapeListing(rawUrl: string): Promise<ScrapedListing> {
     image: null,
     address: null,
     description: null,
-    price_total: null,
-    price_per_night: null,
-    currency: null,
+    price_total: urlPrice ? Math.round(urlPrice.total) : null,
+    price_per_night: urlPrice && n ? Math.round((urlPrice.total / n) * 100) / 100 : null,
+    currency: urlPrice?.currency ?? null,
     rating: null,
     rating_scale: source === "airbnb" ? 5 : source === "booking" ? 10 : null,
     review_count: null,
@@ -332,41 +399,43 @@ export async function scrapeListing(rawUrl: string): Promise<ScrapedListing> {
     fetched: false,
   };
 
+  const missing = (r: ScrapedListing) =>
+    [r.price_total == null && r.price_per_night == null ? "Preis" : null, r.rating == null ? "Bewertung" : null]
+      .filter(Boolean)
+      .join(" & ");
+
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 12000);
-    const res = await fetch(url, {
-      signal: ctrl.signal,
-      redirect: "follow",
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
-      },
-    });
-    clearTimeout(t);
-    if (!res.ok) {
-      return { ...base, warning: `Seite antwortete mit Status ${res.status} – bitte Daten ergänzen.` };
+    const { status, html, finalUrl } = await fetchHtml(cleanUrl(url, source));
+    if (looksBlocked(status, html) || status >= 400) {
+      const m = missing(base);
+      return {
+        ...base,
+        warning: `${sourceName(source)} hat die automatische Abfrage blockiert${m ? ` – ${m} bitte unter „Details bearbeiten“ ergänzen` : ""}.`,
+      };
     }
-    const html = await res.text();
-    const parsed = parseListingHtml(html, new URL(res.url || url.toString()));
+    const parsed = parseListingHtml(html, new URL(finalUrl));
     const merged: ScrapedListing = { ...base, fetched: true };
     for (const [k, v] of Object.entries(parsed)) {
-      if (v != null && v !== "") (merged as Record<string, unknown>)[k] = v;
+      if (v == null || v === "") continue;
+      // Preis aus dem Link (gewähltes Zimmer + Daten) ist genauer als "ab"-Preise der Seite
+      if (urlPrice && (k === "price_per_night" || k === "currency")) continue;
+      (merged as Record<string, unknown>)[k] = v;
     }
-    const n = nights(checkin, checkout);
-    if (merged.price_per_night != null && n) merged.price_total = Math.round(merged.price_per_night * n);
-    if (!merged.name && !merged.rating) {
-      merged.warning = "Seite konnte kaum ausgelesen werden (evtl. Bot-Schutz) – bitte Daten ergänzen.";
-    } else if (merged.price_per_night == null) {
-      merged.warning = "Preis nicht gefunden (hängt oft von Reisedaten ab) – bitte manuell eintragen.";
+    if (merged.price_total == null && merged.price_per_night != null && n) {
+      merged.price_total = Math.round(merged.price_per_night * n);
     }
+    const m = missing(merged);
+    if (m) merged.warning = `${m} nicht gefunden – bitte unter „Details bearbeiten“ ergänzen.`;
     return merged;
   } catch (e) {
+    const m = missing(base);
     return {
       ...base,
-      warning: `Seite konnte nicht geladen werden (${(e as Error).name === "AbortError" ? "Zeitüberschreitung" : "blockiert"}) – bitte Preis & Bewertung ergänzen.`,
+      warning: `Seite konnte nicht geladen werden (${(e as Error).name === "AbortError" ? "Zeitüberschreitung" : "Netzwerkfehler"})${m ? ` – ${m} bitte ergänzen` : ""}.`,
     };
   }
+}
+
+function sourceName(s: string) {
+  return s === "booking" ? "Booking.com" : s === "airbnb" ? "Airbnb" : "Die Seite";
 }
