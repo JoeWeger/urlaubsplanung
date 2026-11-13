@@ -20,6 +20,8 @@ export type ScrapedListing = {
   review_count: number | null;
   checkin: string | null;
   checkout: string | null;
+  orig_price: number | null;
+  orig_currency: string | null;
   fetched: boolean;
   warning?: string;
 };
@@ -309,10 +311,13 @@ export function parseListingHtml(html: string, url: URL): Partial<ScrapedListing
   return r;
 }
 
+import { currencyForCountry, getRate } from "./currency";
+
 /**
  * Booking.com schreibt den Preis des gewählten Zimmers direkt in den Link:
  *   sr_pri_blocks=<blockId>__<Preis in Cent>  (bei sb_price_type=total = Gesamtpreis)
- * Mehrere Zimmer sind durch Komma getrennt.
+ * Mehrere Zimmer sind durch Komma getrennt. Der Betrag ist in der Landeswährung
+ * des Hotels (z. B. CAD bei /hotel/ca/…), nicht in der Anzeigewährung.
  */
 export function bookingPriceFromUrl(url: URL): { total: number; currency: string } | null {
   const p = url.searchParams;
@@ -324,8 +329,8 @@ export function bookingPriceFromUrl(url: URL): { total: number; currency: string
     if (m) cents += Number(m[1]);
   }
   if (!cents) return null;
-  const currency = (p.get("selected_currency") || p.get("currency") || "EUR").toUpperCase();
-  return { total: Math.round(cents) / 100, currency: /^[A-Z]{3}$/.test(currency) ? currency : "EUR" };
+  const cc = url.pathname.match(/\/hotel\/([a-z]{2})\//i)?.[1];
+  return { total: cents / 100, currency: currencyForCountry(cc) ?? "EUR" };
 }
 
 /** Tracking-Parameter entfernen – nur was für die Seite relevant ist */
@@ -379,7 +384,13 @@ export async function scrapeListing(rawUrl: string): Promise<ScrapedListing> {
   const source = detectSource(url);
   const { checkin, checkout } = datesFromUrl(url);
   const n = nights(checkin, checkout);
-  const urlPrice = source === "booking" ? bookingPriceFromUrl(url) : null;
+  const urlPriceRaw = source === "booking" ? bookingPriceFromUrl(url) : null;
+  // In Euro umrechnen (Booking zeigt ebenfalls umgerechnete Preise)
+  let urlPrice: { total: number; currency: string } | null = urlPriceRaw;
+  if (urlPriceRaw && urlPriceRaw.currency !== "EUR") {
+    const rate = await getRate(urlPriceRaw.currency, "EUR");
+    if (rate) urlPrice = { total: urlPriceRaw.total * rate, currency: "EUR" };
+  }
 
   const base: ScrapedListing = {
     url: url.toString(),
@@ -391,6 +402,8 @@ export async function scrapeListing(rawUrl: string): Promise<ScrapedListing> {
     price_total: urlPrice ? Math.round(urlPrice.total) : null,
     price_per_night: urlPrice && n ? Math.round((urlPrice.total / n) * 100) / 100 : null,
     currency: urlPrice?.currency ?? null,
+    orig_price: urlPriceRaw && urlPriceRaw.currency !== urlPrice?.currency ? urlPriceRaw.total : null,
+    orig_currency: urlPriceRaw && urlPriceRaw.currency !== urlPrice?.currency ? urlPriceRaw.currency : null,
     rating: null,
     rating_scale: source === "airbnb" ? 5 : source === "booking" ? 10 : null,
     review_count: null,

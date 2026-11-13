@@ -52,6 +52,8 @@ export type Hotel = {
   review_count: number | null;
   checkin: string | null;
   checkout: string | null;
+  orig_price: number | null;
+  orig_currency: string | null;
   status: "shortlist" | "favorite" | "booked" | "rejected" | string;
   notes: string | null;
 };

@@ -354,6 +354,11 @@ function HotelCard({
               {h.price_per_night != null ? `${fmtMoney(h.price_per_night, h.currency)} / Nacht` : "Preis fehlt"}
               {n ? ` · ${n} N.` : ""}
             </div>
+            {h.orig_price != null && h.orig_currency && (
+              <div className="text-[11px] text-slate-400" title="Booking-Preis in Landeswährung, mit aktuellem Kurs umgerechnet">
+                ≈ umgerechnet aus {fmtMoney(h.orig_price, h.orig_currency)}
+              </div>
+            )}
           </div>
           <div className="text-right">
             {h.rating != null ? (

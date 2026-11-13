@@ -183,9 +183,9 @@ export async function importHotel(_: ImportState, f: FormData): Promise<ImportSt
     if (perNight == null && total != null) perNight = Math.round((total / nn) * 100) / 100;
   }
   await query(
-    `INSERT INTO hotels (stop_id, url, source, name, image, address, description, price_total, price_per_night, currency, rating, rating_scale, review_count, checkin, checkout)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-    [stopId, d.url, d.source, d.name ?? url.hostname, d.image, d.address, d.description, total, perNight, d.currency ?? "EUR", d.rating, d.rating_scale, d.review_count, checkin, checkout],
+    `INSERT INTO hotels (stop_id, url, source, name, image, address, description, price_total, price_per_night, currency, rating, rating_scale, review_count, checkin, checkout, orig_price, orig_currency)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+    [stopId, d.url, d.source, d.name ?? url.hostname, d.image, d.address, d.description, total, perNight, d.currency ?? "EUR", d.rating, d.rating_scale, d.review_count, checkin, checkout, d.orig_price, d.orig_currency],
   );
   refresh();
   return { ok: true, warning: d.warning };
@@ -202,7 +202,9 @@ export async function updateHotel(f: FormData) {
     if (perNight == null && total != null) perNight = Math.round((total / nn) * 100) / 100;
   }
   await query(
-    `UPDATE hotels SET name=$2, url=$3, image=$4, address=$5, price_total=$6, price_per_night=$7, currency=$8, rating=$9, rating_scale=$10, review_count=$11, checkin=$12, checkout=$13, notes=$14, description=$15 WHERE id=$1`,
+    `UPDATE hotels SET orig_price = CASE WHEN price_total IS DISTINCT FROM $6 THEN NULL ELSE orig_price END,
+       orig_currency = CASE WHEN price_total IS DISTINCT FROM $6 THEN NULL ELSE orig_currency END,
+       name=$2, url=$3, image=$4, address=$5, price_total=$6, price_per_night=$7, currency=$8, rating=$9, rating_scale=$10, review_count=$11, checkin=$12, checkout=$13, notes=$14, description=$15 WHERE id=$1`,
     [id(f), s(f, "name"), s(f, "url"), s(f, "image"), s(f, "address"), total, perNight, s(f, "currency") ?? "EUR", n(f, "rating"), n(f, "rating_scale"), n(f, "review_count"), checkin, checkout, s(f, "notes"), s(f, "description")],
   );
   refresh();
@@ -229,8 +231,9 @@ export async function refreshHotel(f: FormData) {
   await query(
     `UPDATE hotels SET name=COALESCE($2,name), image=COALESCE($3,image), address=COALESCE($4,address), description=COALESCE($5,description),
        price_per_night=COALESCE($6,price_per_night), price_total=COALESCE($7,price_total), currency=COALESCE($8,currency),
-       rating=COALESCE($9,rating), rating_scale=COALESCE($10,rating_scale), review_count=COALESCE($11,review_count) WHERE id=$1`,
-    [id(f), d.name, d.image, d.address, d.description, d.price_per_night, d.price_total, d.currency, d.rating, d.rating_scale, d.review_count],
+       rating=COALESCE($9,rating), rating_scale=COALESCE($10,rating_scale), review_count=COALESCE($11,review_count),
+       orig_price=CASE WHEN $7::float8 IS NULL THEN orig_price ELSE $12 END, orig_currency=CASE WHEN $7::float8 IS NULL THEN orig_currency ELSE $13 END WHERE id=$1`,
+    [id(f), d.name, d.image, d.address, d.description, d.price_per_night, d.price_total, d.currency, d.rating, d.rating_scale, d.review_count, d.orig_price, d.orig_currency],
   );
   refresh();
 }
