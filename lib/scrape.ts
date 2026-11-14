@@ -51,16 +51,13 @@ function decodeEntities(s: string): string {
 
 function meta(html: string, key: string): string | null {
   const k = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re1 = new RegExp(
-    `<meta[^>]+(?:property|name|itemprop)=["']${k}["'][^>]*content=["']([^"']*)["']`,
-    "i",
-  );
-  const re2 = new RegExp(
-    `<meta[^>]+content=["']([^"']*)["'][^>]*(?:property|name|itemprop)=["']${k}["']`,
-    "i",
-  );
+  // Wert in "…" darf Apostrophe enthalten (z. B. "15 minutes' walk") und umgekehrt
+  const val = `(?:"([^"]*)"|'([^']*)')`;
+  const re1 = new RegExp(`<meta[^>]+?(?:property|name|itemprop)=["']${k}["'][^>]*?content=${val}`, "i");
+  const re2 = new RegExp(`<meta[^>]+?content=${val}[^>]*?(?:property|name|itemprop)=["']${k}["']`, "i");
   const m = html.match(re1) || html.match(re2);
-  return m ? decodeEntities(m[1]).trim() || null : null;
+  const v = m ? (m[1] ?? m[2]) : null;
+  return v != null ? decodeEntities(v).trim() || null : null;
 }
 
 function num(v: unknown): number | null {
