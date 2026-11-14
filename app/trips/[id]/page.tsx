@@ -15,14 +15,16 @@ import {
   getFlightFiles,
   getFlights,
   getHotelsForTrip,
+  getStopCovers,
   getStops,
   getTrip,
   type Flight,
   type FlightFile,
 } from "@/lib/data";
-import { addDays, fmtDateTime, fmtMoney, fmtRange, nightsBetween, toISODate } from "@/lib/format";
+import { addDays, fmtMoney, fmtRange, fmtShort, nightsBetween, toISODate, tripColor } from "@/lib/format";
 import { Month, monthsBetween, type CalEvent } from "@/components/Calendar";
 import { TripFields } from "@/components/TripForm";
+import { Cover } from "@/components/Cover";
 import { AutoUpload, ConfirmButton, SubmitButton } from "@/components/ui";
 import { findGaps, type Gap } from "@/lib/gaps";
 
@@ -32,12 +34,13 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   const tripId = Number((await params).id);
   const trip = await getTrip(tripId);
   if (!trip) notFound();
-  const [stops, flights, hotels, activities, files] = await Promise.all([
+  const [stops, flights, hotels, activities, files, stopCovers] = await Promise.all([
     getStops(tripId),
     getFlights(tripId),
     getHotelsForTrip(tripId),
     getActivitiesForTrip(tripId),
     getFlightFiles(tripId),
+    getStopCovers(tripId),
   ]);
   const gaps = findGaps(trip.start_date, trip.end_date, stops);
   const openNights = gaps.reduce((a, g) => a + g.nights, 0);
@@ -46,14 +49,18 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
     ...stops.map((s, idx) => ({ kind: "stop" as const, key: s.start_date ?? "9999", idx })),
     ...gaps.map((gap) => ({ kind: "gap" as const, key: gap.start, gap })),
   ].sort((a, b) => a.key.localeCompare(b.key) || (a.kind === "gap" ? -1 : 1));
-  const color = trip.color ?? "#0ea5e9";
+  const color = tripColor(trip.color);
   const nights = nightsBetween(trip.start_date, trip.end_date);
+  const today = toISODate(new Date());
+  const daysUntil = trip.start_date && trip.start_date > today ? nightsBetween(today, trip.start_date) : null;
+  const plannedNights = nights ? nights - openNights : null;
 
   // Budget
   const flightCost = flights.reduce((a, f) => a + (f.price ?? 0), 0);
   const booked = hotels.filter((h) => h.status === "booked");
   const hotelCost = booked.reduce((a, h) => a + (h.price_total ?? 0), 0);
   const actCost = activities.reduce((a, x) => a + (x.cost ?? 0), 0);
+  const total = flightCost + hotelCost + actCost;
 
   // Kalender
   const events: CalEvent[] = [
@@ -72,14 +79,14 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
       .map<CalEvent>((f) => ({
         start: f.depart_at!.slice(0, 10),
         label: `${f.from_airport ?? ""}→${f.to_airport ?? ""} ${f.depart_at!.slice(11, 16)}`,
-        color: "#475569",
+        color: "#463f37",
         kind: "flight",
       })),
     ...gaps.map<CalEvent>((g) => ({
       start: g.start,
       end: addDays(g.end, -1),
       label: "Offen",
-      color: "#dc2626",
+      color: "#c2603a",
       kind: "gap",
     })),
     ...activities
@@ -87,7 +94,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
       .map<CalEvent>((a) => ({
         start: a.date!,
         label: `${a.time ? a.time.slice(0, 5) + " " : ""}${a.title}`,
-        color: "#16a34a",
+        color: "#2e6553",
         href: `/trips/${tripId}/stops/${a.stop_id}`,
         kind: "activity",
       })),
@@ -95,110 +102,135 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   const calStart = trip.start_date ?? stops[0]?.start_date;
   const calEnd = trip.end_date ?? stops.at(-1)?.end_date ?? calStart;
   const months = calStart && calEnd ? monthsBetween(calStart, calEnd) : [];
-  const today = toISODate(new Date());
+  const heroImage = stopCovers.get(stops.find((s) => stopCovers.has(s.id))?.id ?? -1);
 
   return (
-    <div className="space-y-6">
-      {/* Kopf */}
-      <div className="card overflow-hidden">
-        <div className="h-2" style={{ background: color }} />
-        <div className="flex flex-wrap items-start justify-between gap-4 p-5">
-          <div>
-            <Link href="/" className="text-xs text-slate-400 hover:text-slate-600">← Alle Urlaube</Link>
-            <h1 className="text-2xl font-bold">{trip.name}</h1>
-            <p className="text-slate-600">
-              {trip.destination && <>{trip.destination} · </>}
-              {fmtRange(trip.start_date, trip.end_date)}
-              {nights ? ` · ${nights} Nächte` : ""}
-            </p>
-            {trip.notes && <p className="mt-2 max-w-2xl text-sm whitespace-pre-line text-slate-500">{trip.notes}</p>}
+    <div className="space-y-10">
+      {/* Hero */}
+      <section>
+        <Link href="/" className="btn-ghost -ml-3 mb-3 px-3 py-1.5 text-xs">← Alle Reisen</Link>
+        <Cover color={color} image={heroImage} className="min-h-[300px] sm:min-h-[380px]" rounded="rounded-[2rem]">
+          <div className="flex min-h-[300px] flex-col justify-end p-6 pb-14 text-white sm:min-h-[380px] sm:p-10 sm:pb-16">
+            <div className="flex flex-wrap items-end justify-between gap-6">
+              <div>
+                {trip.destination && <p className="eyebrow text-white/75">{trip.destination}</p>}
+                <h1 className="font-display mt-1 text-5xl leading-none font-light sm:text-7xl">{trip.name}</h1>
+                <p className="mt-3 text-white/90">
+                  {fmtRange(trip.start_date, trip.end_date)}
+                  {nights ? ` · ${nights} Nächte` : ""}
+                </p>
+              </div>
+              {daysUntil != null && (
+                <div className="rounded-2xl bg-white/15 px-5 py-3 text-right backdrop-blur-md">
+                  <div className="font-display text-5xl leading-none">{daysUntil}</div>
+                  <div className="text-[11px] tracking-wider text-white/80 uppercase">Tage bis zum Abflug</div>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="grid grid-cols-3 gap-3 text-center text-sm">
-            <Stat label="Flüge" value={fmtMoney(flightCost)} />
-            <Stat label="Hotels (gebucht)" value={fmtMoney(hotelCost)} />
-            <Stat label="Aktivitäten" value={fmtMoney(actCost)} />
-          </div>
-        </div>
-        <details className="border-t border-slate-100">
-          <summary className="cursor-pointer px-5 py-2.5 text-sm text-slate-500 hover:bg-slate-50">✏️ Urlaub bearbeiten</summary>
-          <div className="flex flex-col gap-3 p-5 pt-2">
-            <form action={updateTrip}>
-              <input type="hidden" name="id" value={trip.id} />
-              <TripFields trip={trip} />
-              <SubmitButton className="btn-primary mt-3">Speichern</SubmitButton>
-            </form>
-            <form action={deleteTrip}>
-              <input type="hidden" name="id" value={trip.id} />
-              <ConfirmButton message="Den ganzen Urlaub inkl. Stopps, Hotels und Flügen löschen?">Urlaub löschen</ConfirmButton>
-            </form>
-          </div>
-        </details>
-      </div>
+        </Cover>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
-        {/* Route / Stopps */}
+        {/* Kennzahlen */}
+        <div className="card relative z-10 mx-3 -mt-8 grid grid-cols-2 divide-line sm:mx-8 sm:grid-cols-4 sm:divide-x">
+          <Stat label="Gesamtbudget" value={fmtMoney(total)} strong />
+          <Stat label="Flüge" value={fmtMoney(flightCost)} />
+          <Stat label="Unterkünfte (gebucht)" value={fmtMoney(hotelCost)} />
+          <Stat label="Aktivitäten" value={fmtMoney(actCost)} />
+        </div>
+
+        {trip.notes && (
+          <p className="font-display mx-auto mt-8 max-w-2xl text-center text-lg leading-relaxed whitespace-pre-line text-slate-600 italic">
+            „{trip.notes}“
+          </p>
+        )}
+      </section>
+
+      <div className="grid gap-10 lg:grid-cols-[1fr_360px]">
+        {/* Route */}
         <section>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="h2">Route</h2>
-            {openNights > 0 ? (
-              <span className="chip bg-red-50 text-red-700">⚠ {openNights} {openNights === 1 ? "Nacht" : "Nächte"} noch ohne Plan</span>
-            ) : stops.length > 0 && trip.start_date && trip.end_date ? (
-              <span className="chip bg-emerald-50 text-emerald-700">✓ Alle Nächte geplant</span>
-            ) : null}
+          <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="eyebrow">Die Route</p>
+              <h2 className="h2">{stops.length} {stops.length === 1 ? "Stopp" : "Stopps"}</h2>
+            </div>
+            {nights && plannedNights != null && (
+              <div className="min-w-48">
+                <div className="flex justify-between text-xs text-slate-500">
+                  <span>{openNights > 0 ? `${openNights} ${openNights === 1 ? "Nacht" : "Nächte"} offen` : "Alle Nächte geplant ✓"}</span>
+                  <span>{plannedNights}/{nights}</span>
+                </div>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-sand-deep">
+                  <div
+                    className={`h-full rounded-full ${openNights > 0 ? "bg-clay" : "bg-sky-600"}`}
+                    style={{ width: `${Math.max(4, (plannedNights / nights) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
-          <div className="relative space-y-3">
-            {stops.length === 0 && (
-              <div className="card p-6 text-center text-sm text-slate-500">Noch keine Stopps. Füge z. B. „Montreal“ hinzu.</div>
+
+          <ol className="relative">
+            {/* Zeitleiste */}
+            {route.length > 0 && <span className="absolute top-6 bottom-6 left-[19px] w-px bg-gradient-to-b from-line via-slate-300 to-line" aria-hidden />}
+            {stops.length === 0 && gaps.length === 0 && (
+              <li className="card p-8 text-center text-sm text-slate-500">Noch keine Stopps. Füge unten z. B. „Montreal“ hinzu.</li>
             )}
             {route.map((item) => {
               if (item.kind === "gap") return <GapCard key={`gap-${item.key}`} gap={item.gap} tripId={trip.id} />;
               const i = item.idx;
               const s = stops[i];
-              const hs = hotels.filter((h) => h.stop_id === s.id);
+              const hs = hotels.filter((h) => h.stop_id === s.id && h.status !== "rejected");
               const acts = activities.filter((a) => a.stop_id === s.id);
               const bookedHotel = hs.find((h) => h.status === "booked");
               const n = nightsBetween(s.start_date, s.end_date);
+              const img = stopCovers.get(s.id);
               return (
-                <Link
-                  key={s.id}
-                  href={`/trips/${tripId}/stops/${s.id}`}
-                  className="card group flex gap-4 p-4 transition hover:shadow-md"
-                >
-                  <div
-                    className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-bold text-white"
+                <li key={s.id} className="relative pb-4 pl-14">
+                  <span
+                    className="absolute top-5 left-0 grid h-10 w-10 place-items-center rounded-full border-4 border-sand text-sm font-semibold text-white shadow-sm"
                     style={{ background: color }}
                   >
                     {i + 1}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <h3 className="text-lg font-semibold group-hover:text-sky-700">{s.name}</h3>
-                      <span className="text-sm text-slate-500">
-                        {fmtRange(s.start_date, s.end_date)}
-                        {n ? ` · ${n} N.` : ""}
-                      </span>
+                  </span>
+                  <Link href={`/trips/${tripId}/stops/${s.id}`} className="card card-hover group flex overflow-hidden">
+                    <div className="hidden w-36 shrink-0 sm:block">
+                      <Cover color={color} image={img} className="h-full min-h-32" rounded="rounded-none" shade={false} />
                     </div>
-                    {s.description && <p className="mt-0.5 line-clamp-2 text-sm text-slate-500">{s.description}</p>}
-                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                      {bookedHotel ? (
-                        <span className="chip bg-emerald-50 text-emerald-700">✓ {bookedHotel.name}</span>
-                      ) : (
-                        <span className="chip bg-amber-50 text-amber-700">
-                          🏨 {hs.length} {hs.length === 1 ? "Hotel" : "Hotels"} in Auswahl
+                    <div className="min-w-0 flex-1 p-5">
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                        <h3 className="font-display text-2xl leading-tight group-hover:text-sky-700">{s.name}</h3>
+                        <span className="text-sm text-slate-500 tabular-nums">
+                          {fmtRange(s.start_date, s.end_date)}
+                          {n ? <span className="text-slate-400"> · {n} {n === 1 ? "Nacht" : "Nächte"}</span> : ""}
                         </span>
-                      )}
-                      <span className="chip bg-slate-100 text-slate-600">📍 {acts.length} geplant</span>
+                      </div>
+                      {s.description && <p className="mt-1 line-clamp-2 text-sm text-slate-500">{s.description}</p>}
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                        {bookedHotel ? (
+                          <span className="chip bg-sky-50 text-sky-800">✓ {bookedHotel.name}</span>
+                        ) : hs.length ? (
+                          <span className="chip bg-gold/10 text-[#8a6620]">
+                            {hs.length} {hs.length === 1 ? "Unterkunft" : "Unterkünfte"} in Auswahl
+                          </span>
+                        ) : (
+                          <span className="chip bg-clay/10 text-clay">Noch keine Unterkunft</span>
+                        )}
+                        {acts.length > 0 && <span className="chip bg-slate-100 text-slate-600">{acts.length} geplant</span>}
+                      </div>
                     </div>
-                  </div>
-                  <span className="self-center text-slate-300 group-hover:text-sky-600">›</span>
-                </Link>
+                    <span className="self-center pr-5 text-xl text-slate-300 transition group-hover:translate-x-1 group-hover:text-ink">→</span>
+                  </Link>
+                </li>
               );
             })}
-          </div>
+          </ol>
 
-          <details className="card mt-3">
-            <summary className="btn-ghost w-full justify-start px-4 py-3">＋ Stopp hinzufügen</summary>
-            <form action={createStop} className="grid gap-3 p-4 pt-0 sm:grid-cols-2">
+          <details className="card group mt-2 ml-14">
+            <summary className="flex cursor-pointer items-center gap-3 p-4 text-sm font-medium text-slate-600 hover:text-ink">
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-sand-deep text-base transition group-open:rotate-45">+</span>
+              Stopp hinzufügen
+            </summary>
+            <form action={createStop} className="grid gap-3 border-t border-line p-4 sm:grid-cols-2">
               <input type="hidden" name="trip_id" value={trip.id} />
               <div className="sm:col-span-2">
                 <label className="label">Ort</label>
@@ -223,18 +255,24 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
 
         {/* Flüge */}
         <section>
-          <h2 className="h2 mb-3">Flüge</h2>
-          <div className="space-y-3">
-            {flights.length === 0 && <div className="card p-4 text-sm text-slate-500">Noch keine Flüge eingetragen.</div>}
+          <p className="eyebrow">Unterwegs</p>
+          <h2 className="h2 mb-5">Flüge</h2>
+          <div className="space-y-4">
+            {flights.length === 0 && (
+              <div className="card p-6 text-center text-sm text-slate-500">Noch keine Flüge eingetragen.</div>
+            )}
             {flights.map((f) => (
               <FlightCard key={f.id} f={f} files={files.filter((x) => x.flight_id === f.id)} />
             ))}
-            <details className="card">
-              <summary className="btn-ghost w-full justify-start px-4 py-3">＋ Flug hinzufügen</summary>
-              <form action={createFlight} className="p-4 pt-0">
+            <details className="card group">
+              <summary className="flex cursor-pointer items-center gap-3 p-4 text-sm font-medium text-slate-600 hover:text-ink">
+                <span className="grid h-7 w-7 place-items-center rounded-full bg-sand-deep text-base transition group-open:rotate-45">+</span>
+                Flug hinzufügen
+              </summary>
+              <form action={createFlight} className="border-t border-line p-4">
                 <input type="hidden" name="trip_id" value={trip.id} />
                 <FlightFields />
-                <SubmitButton className="btn-primary mt-3 w-full">Flug speichern</SubmitButton>
+                <SubmitButton className="btn-primary mt-4 w-full">Flug speichern</SubmitButton>
               </form>
             </details>
           </div>
@@ -243,23 +281,42 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
 
       {months.length > 0 && (
         <section>
-          <h2 className="h2 mb-3">Reisekalender</h2>
-          <div className="grid gap-4 xl:grid-cols-2">
+          <p className="eyebrow">Tag für Tag</p>
+          <h2 className="h2 mb-5">Reisekalender</h2>
+          <div className="grid gap-5 xl:grid-cols-2">
             {months.map((m) => (
               <Month key={`${m.year}-${m.month}`} {...m} events={events} today={today} compact />
             ))}
           </div>
         </section>
       )}
+
+      <details className="card group">
+        <summary className="flex cursor-pointer items-center justify-between p-5 text-sm font-medium text-slate-600 hover:text-ink">
+          <span>Urlaub bearbeiten</span>
+          <span className="transition group-open:rotate-180">⌄</span>
+        </summary>
+        <div className="flex flex-col gap-4 border-t border-line p-5">
+          <form action={updateTrip}>
+            <input type="hidden" name="id" value={trip.id} />
+            <TripFields trip={trip} />
+            <SubmitButton className="btn-primary mt-4">Speichern</SubmitButton>
+          </form>
+          <form action={deleteTrip}>
+            <input type="hidden" name="id" value={trip.id} />
+            <ConfirmButton message="Den ganzen Urlaub inkl. Stopps, Hotels und Flügen löschen?">Urlaub löschen</ConfirmButton>
+          </form>
+        </div>
+      </details>
     </div>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div className="rounded-xl bg-slate-50 px-3 py-2">
-      <div className="font-semibold">{value}</div>
-      <div className="text-[11px] text-slate-500">{label}</div>
+    <div className="px-5 py-4">
+      <div className="text-[11px] tracking-wider text-slate-500 uppercase">{label}</div>
+      <div className={`font-display mt-0.5 tabular-nums ${strong ? "text-3xl" : "text-2xl text-slate-700"}`}>{value}</div>
     </div>
   );
 }
@@ -309,67 +366,98 @@ function FlightFields({ f }: { f?: Flight }) {
       </div>
       <div className="col-span-2">
         <label className="label">{f ? "Weitere Dokumente (PDF/Bild, max. 4 MB)" : "Ticket / Bestätigung (PDF/Bild, max. 4 MB)"}</label>
-        <input type="file" name="files" accept="application/pdf,image/*" multiple className="input file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-2 file:py-1 file:text-xs" />
+        <input type="file" name="files" accept="application/pdf,image/*" multiple className="input file:mr-3 file:rounded-full file:border-0 file:bg-sand-deep file:px-3 file:py-1 file:text-xs" />
       </div>
     </div>
   );
 }
 
+const time = (dt?: string | null) => (dt && dt.length > 10 ? dt.slice(11, 16) : "––:––");
+
 function FlightCard({ f, files }: { f: Flight; files: FlightFile[] }) {
   return (
-    <div className="card p-4">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-lg font-semibold">
-          {f.from_airport || "?"} <span className="text-slate-300">✈</span> {f.to_airport || "?"}
+    <div className="card overflow-hidden">
+      {/* Bordkarte */}
+      <div className="p-5">
+        <div className="flex items-center justify-between text-[11px] tracking-wider text-slate-500 uppercase">
+          <span>{[f.airline, f.flight_no].filter(Boolean).join(" · ") || "Flug"}</span>
+          <span>{f.depart_at ? fmtShort(f.depart_at.slice(0, 10)) : ""}</span>
         </div>
-        {f.price != null && <span className="text-sm font-medium">{fmtMoney(f.price)}</span>}
-      </div>
-      <div className="text-sm text-slate-600">
-        {[f.airline, f.flight_no].filter(Boolean).join(" · ")}
-        {f.booking_ref && <span className="text-slate-400"> · Code {f.booking_ref}</span>}
-      </div>
-      <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-500">
-        <div><div className="text-slate-400">Abflug</div>{fmtDateTime(f.depart_at)}</div>
-        <div><div className="text-slate-400">Ankunft</div>{fmtDateTime(f.arrive_at)}</div>
-      </div>
-      {f.notes && <p className="mt-2 text-xs text-slate-500">{f.notes}</p>}
-      <div className="mt-3 space-y-1">
-        {files.map((file) => (
-          <div key={file.id} className="flex items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5 text-sm">
-            <span>{file.mime?.startsWith("image/") ? "🖼" : "📄"}</span>
-            <a href={`/api/files/${file.id}`} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate text-sky-700 hover:underline">
-              {file.filename}
-            </a>
-            {file.size != null && <span className="text-[11px] text-slate-400">{Math.max(1, Math.round(file.size / 1024))} KB</span>}
-            <a href={`/api/files/${file.id}?download`} className="text-xs text-slate-500 hover:text-slate-800" title="Herunterladen">⬇</a>
-            <form action={deleteFlightFile}>
-              <input type="hidden" name="id" value={file.id} />
-              <ConfirmButton className="cursor-pointer text-xs text-slate-400 hover:text-red-600" message={`${file.filename} löschen?`}>✕</ConfirmButton>
-            </form>
+        <div className="mt-3 flex items-center gap-3">
+          <div>
+            <div className="font-display text-4xl leading-none">{f.from_airport || "???"}</div>
+            <div className="mt-1 text-sm text-slate-500 tabular-nums">{time(f.depart_at)}</div>
           </div>
-        ))}
-        <AutoUpload action={uploadFlightFiles} id={f.id} />
-      </div>
-      <div className="mt-2 flex flex-wrap items-center gap-1">
-        {f.link && (
-          <a href={f.link} target="_blank" rel="noopener noreferrer" className="btn-ghost px-2 py-1 text-xs text-sky-700">
-            Buchung öffnen ↗
-          </a>
-        )}
-        <details className="w-full">
-          <summary className="btn-ghost px-2 py-1 text-xs">Bearbeiten</summary>
-          <form action={updateFlight} className="pt-2">
-            <input type="hidden" name="id" value={f.id} />
-            <FlightFields f={f} />
-            <div className="mt-3 flex gap-2">
-              <SubmitButton>Speichern</SubmitButton>
+          <div className="relative flex flex-1 items-center">
+            <span className="h-px flex-1 border-t border-dashed border-slate-300" />
+            <span className="mx-2 text-lg text-sky-600">✈</span>
+            <span className="h-px flex-1 border-t border-dashed border-slate-300" />
+          </div>
+          <div className="text-right">
+            <div className="font-display text-4xl leading-none">{f.to_airport || "???"}</div>
+            <div className="mt-1 text-sm text-slate-500 tabular-nums">
+              {time(f.arrive_at)}
+              {f.arrive_at && f.depart_at && f.arrive_at.slice(0, 10) !== f.depart_at.slice(0, 10) && <sup className="ml-0.5 text-clay">+1</sup>}
             </div>
-          </form>
-          <form action={deleteFlight} className="mt-2">
-            <input type="hidden" name="id" value={f.id} />
-            <ConfirmButton message="Flug löschen?">Flug löschen</ConfirmButton>
-          </form>
-        </details>
+          </div>
+        </div>
+      </div>
+      {/* Abriss */}
+      <div className="relative flex items-center">
+        <span className="absolute -left-3 h-6 w-6 rounded-full border border-line bg-sand" />
+        <span className="mx-5 w-full border-t-2 border-dotted border-line" />
+        <span className="absolute -right-3 h-6 w-6 rounded-full border border-line bg-sand" />
+      </div>
+      <div className="space-y-3 p-5 pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <div className="text-slate-600">
+            {f.booking_ref ? (
+              <>
+                Code <span className="font-mono font-semibold tracking-wider text-ink">{f.booking_ref}</span>
+              </>
+            ) : (
+              <span className="text-slate-400">Kein Buchungscode</span>
+            )}
+          </div>
+          {f.price != null && <span className="font-display text-xl">{fmtMoney(f.price)}</span>}
+        </div>
+        {f.notes && <p className="text-xs text-slate-500">{f.notes}</p>}
+        <div className="space-y-1.5">
+          {files.map((file) => (
+            <div key={file.id} className="flex items-center gap-2 rounded-xl bg-sand/70 px-3 py-2 text-sm">
+              <span>{file.mime?.startsWith("image/") ? "🖼" : "📄"}</span>
+              <a href={`/api/files/${file.id}`} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate font-medium text-ink hover:text-sky-700">
+                {file.filename}
+              </a>
+              {file.size != null && <span className="text-[11px] text-slate-400">{Math.max(1, Math.round(file.size / 1024))} KB</span>}
+              <a href={`/api/files/${file.id}?download`} className="text-xs text-slate-500 hover:text-ink" title="Herunterladen">⬇</a>
+              <form action={deleteFlightFile}>
+                <input type="hidden" name="id" value={file.id} />
+                <ConfirmButton className="cursor-pointer text-xs text-slate-400 hover:text-red-600" message={`${file.filename} löschen?`}>✕</ConfirmButton>
+              </form>
+            </div>
+          ))}
+          <AutoUpload action={uploadFlightFiles} id={f.id} />
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          {f.link && (
+            <a href={f.link} target="_blank" rel="noopener noreferrer" className="btn-outline px-3 py-1.5 text-xs">
+              Buchung öffnen ↗
+            </a>
+          )}
+          <details className="w-full">
+            <summary className="btn-ghost px-3 py-1.5 text-xs">Bearbeiten</summary>
+            <form action={updateFlight} className="pt-3">
+              <input type="hidden" name="id" value={f.id} />
+              <FlightFields f={f} />
+              <SubmitButton className="btn-primary mt-3">Speichern</SubmitButton>
+            </form>
+            <form action={deleteFlight} className="mt-2">
+              <input type="hidden" name="id" value={f.id} />
+              <ConfirmButton message="Flug löschen?">Flug löschen</ConfirmButton>
+            </form>
+          </details>
+        </div>
       </div>
     </div>
   );
@@ -377,26 +465,26 @@ function FlightCard({ f, files }: { f: Flight; files: FlightFile[] }) {
 
 function GapCard({ gap, tripId }: { gap: Gap; tripId: number }) {
   return (
-    <details className="rounded-2xl border-2 border-dashed border-red-300 bg-red-50/60">
-      <summary className="flex cursor-pointer items-center gap-4 p-4">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-dashed border-red-300 text-lg text-red-400">?</div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="font-semibold text-red-700">Noch nicht geplant</h3>
-            <span className="text-sm text-red-600">
-              {fmtRange(gap.start, gap.end)} · {gap.nights} {gap.nights === 1 ? "Nacht" : "Nächte"}
-            </span>
+    <li className="relative pb-4 pl-14">
+      <span className="absolute top-4 left-0 grid h-10 w-10 place-items-center rounded-full border-2 border-dashed border-clay/60 bg-sand text-clay">?</span>
+      <details className="group rounded-3xl border-2 border-dashed border-clay/40 bg-clay/5">
+        <summary className="flex cursor-pointer flex-wrap items-baseline justify-between gap-2 p-5">
+          <div>
+            <h3 className="font-display text-xl text-clay">Noch nicht geplant</h3>
+            <p className="text-xs text-clay/80">Hier fehlt ein Ort – tippen, um einen Stopp für diese Zeit anzulegen.</p>
           </div>
-          <p className="text-xs text-red-500">Hier fehlt noch ein Ort / eine Unterkunft. Klicken, um einen Stopp für diese Zeit anzulegen.</p>
-        </div>
-      </summary>
-      <form action={createStop} className="grid gap-3 px-4 pb-4 sm:grid-cols-[1fr_auto_auto_auto]">
-        <input type="hidden" name="trip_id" value={tripId} />
-        <input name="name" required placeholder="Ort, z. B. Ottawa" className="input" />
-        <input type="date" name="start_date" defaultValue={gap.start} className="input" />
-        <input type="date" name="end_date" defaultValue={gap.end} className="input" />
-        <SubmitButton>Stopp anlegen</SubmitButton>
-      </form>
-    </details>
+          <span className="text-sm text-clay tabular-nums">
+            {fmtRange(gap.start, gap.end)} · {gap.nights} {gap.nights === 1 ? "Nacht" : "Nächte"}
+          </span>
+        </summary>
+        <form action={createStop} className="grid gap-3 px-5 pb-5 sm:grid-cols-[1fr_auto_auto_auto]">
+          <input type="hidden" name="trip_id" value={tripId} />
+          <input name="name" required placeholder="Ort, z. B. Ottawa" className="input" />
+          <input type="date" name="start_date" defaultValue={gap.start} className="input" />
+          <input type="date" name="end_date" defaultValue={gap.end} className="input" />
+          <SubmitButton className="btn-primary">Anlegen</SubmitButton>
+        </form>
+      </details>
+    </li>
   );
 }

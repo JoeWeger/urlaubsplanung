@@ -44,29 +44,29 @@ export function Month({
   const cells = monthDays(year, month);
   return (
     <div className="card overflow-hidden">
-      <div className="border-b border-slate-100 px-4 py-2.5 font-semibold capitalize">
+      <div className="font-display border-b border-line px-5 py-4 text-xl capitalize">
         {monthFmt.format(new Date(Date.UTC(year, month, 1)))}
       </div>
-      <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50 text-center text-[11px] font-medium text-slate-500">
+      <div className="grid grid-cols-7 border-b border-line text-center text-[10px] font-semibold tracking-widest text-slate-400 uppercase">
         {WEEKDAYS.map((w) => (
-          <div key={w} className="py-1">{w}</div>
+          <div key={w} className="py-2">{w}</div>
         ))}
       </div>
       <div className="grid grid-cols-7">
         {cells.map((day, i) => {
-          if (!day) return <div key={i} className="min-h-12 border-b border-r border-slate-100 bg-slate-50/50" />;
+          if (!day) return <div key={i} className="min-h-12 border-b border-r border-line/60 bg-sand/40" />;
           const evs = events.filter((e) => covers(e, day));
           const isToday = day === today;
           const dayNum = Number(day.slice(8, 10));
           return (
             <div
               key={i}
-              className={`${compact ? "min-h-16" : "min-h-24"} border-b border-r border-slate-100 p-1`}
+              className={`${compact ? "min-h-16" : "min-h-24"} border-b border-r border-line/60 p-1`}
             >
               <div
                 className={`mb-0.5 text-right text-[11px] ${isToday ? "font-bold text-sky-600" : "text-slate-400"}`}
               >
-                {isToday ? <span className="rounded-full bg-sky-600 px-1.5 text-white">{dayNum}</span> : dayNum}
+                {isToday ? <span className="rounded-full bg-ink px-1.5 py-0.5 text-paper">{dayNum}</span> : dayNum}
               </div>
               <div className="flex flex-col gap-0.5">
                 {evs.slice(0, compact ? 3 : 5).map((e, j) => {
@@ -75,13 +75,13 @@ export function Month({
                   const body = (
                     <div
                       title={e.label}
-                      className="truncate rounded px-1 text-[10px] leading-4 font-medium sm:text-[11px]"
+                      className="truncate rounded-md px-1.5 py-0.5 text-[10px] leading-4 font-medium sm:text-[11px]"
                       style={{
                         background:
                           e.kind === "trip"
                             ? e.color
                             : e.kind === "gap"
-                              ? "repeating-linear-gradient(135deg,#fee2e2 0 6px,#fecaca 6px 12px)"
+                              ? "repeating-linear-gradient(135deg,#f6e3d9 0 6px,#efd3c4 6px 12px)"
                               : `${e.color}22`,
                         color: e.kind === "trip" ? "#fff" : e.color,
                         borderLeft: e.kind === "stop" ? `3px solid ${e.color}` : undefined,

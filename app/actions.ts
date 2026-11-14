@@ -46,7 +46,7 @@ export async function login(_: unknown, f: FormData) {
 export async function createTrip(f: FormData) {
   const rows = await query<{ id: number }>(
     "INSERT INTO trips (name, destination, start_date, end_date, color, notes) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id",
-    [s(f, "name") ?? "Neuer Urlaub", s(f, "destination"), s(f, "start_date"), s(f, "end_date"), s(f, "color") ?? "#0ea5e9", s(f, "notes")],
+    [s(f, "name") ?? "Neuer Urlaub", s(f, "destination"), s(f, "start_date"), s(f, "end_date"), s(f, "color") ?? "#2e6553", s(f, "notes")],
   );
   refresh();
   redirect(`/trips/${rows[0].id}`);
@@ -55,7 +55,7 @@ export async function createTrip(f: FormData) {
 export async function updateTrip(f: FormData) {
   await query(
     "UPDATE trips SET name=$2, destination=$3, start_date=$4, end_date=$5, color=$6, notes=$7 WHERE id=$1",
-    [id(f), s(f, "name") ?? "Urlaub", s(f, "destination"), s(f, "start_date"), s(f, "end_date"), s(f, "color") ?? "#0ea5e9", s(f, "notes")],
+    [id(f), s(f, "name") ?? "Urlaub", s(f, "destination"), s(f, "start_date"), s(f, "end_date"), s(f, "color") ?? "#2e6553", s(f, "notes")],
   );
   refresh();
 }

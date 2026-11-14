@@ -17,7 +17,7 @@ export function BookmarkletLink({ code }: { code: string }) {
           e.preventDefault();
           alert("Nicht klicken – in die Lesezeichenleiste ziehen 🙂");
         }}
-        className="inline-flex cursor-grab items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2.5 font-semibold text-white shadow hover:bg-sky-700"
+        className="inline-flex cursor-grab items-center gap-1.5 rounded-full bg-ink px-5 py-2.5 font-medium text-paper shadow-[var(--shadow-lift)] transition hover:-translate-y-0.5"
       >
         ➕ Urlaubsplanung
       </a>

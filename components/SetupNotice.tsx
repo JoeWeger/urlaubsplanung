@@ -1,7 +1,7 @@
 export function SetupNotice({ error }: { error?: string }) {
   return (
     <div className="card mx-auto max-w-2xl p-6">
-      <h1 className="text-xl font-semibold">Datenbank einrichten</h1>
+      <h1 className="font-display text-3xl font-light">Datenbank einrichten</h1>
       <p className="mt-2 text-sm text-slate-600">
         Die App braucht eine Postgres-Datenbank. Auf Vercel geht das in zwei Minuten:
       </p>

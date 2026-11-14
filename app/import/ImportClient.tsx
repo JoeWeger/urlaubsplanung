@@ -41,7 +41,7 @@ export function ImportClient() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <h1 className="text-2xl font-bold">Unterkunft übernehmen</h1>
+      <h1 className="font-display text-4xl font-light">Unterkunft übernehmen</h1>
       {preview.outdated && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
           Dein Lesezeichen ist eine ältere Version und liest weniger aus. Bitte altes Lesezeichen löschen und{" "}
@@ -59,7 +59,7 @@ export function ImportClient() {
         </div>
         <div className="flex-1 p-4">
           <span className="chip bg-slate-100 text-slate-600">{sourceLabel(l.source)}</span>
-          <h2 className="mt-1 text-lg font-semibold">{l.name ?? "Unbekannte Unterkunft"}</h2>
+          <h2 className="font-display mt-1 text-2xl">{l.name ?? "Unbekannte Unterkunft"}</h2>
           {l.address && <p className="text-xs text-slate-500">{l.address}</p>}
           <div className="mt-3 flex flex-wrap gap-4 text-sm">
             <div>
@@ -101,7 +101,7 @@ export function ImportClient() {
 
       {preview.existing.length > 0 && (
         <div className="card p-4">
-          <h3 className="font-semibold">Schon in deiner Liste – aktualisieren?</h3>
+          <h3 className="font-display text-xl">Schon in deiner Liste – aktualisieren?</h3>
           <div className="mt-2 space-y-2">
             {preview.existing.map((h) => (
               <form key={h.id} action={saveImport} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 p-2 text-sm">
@@ -120,7 +120,7 @@ export function ImportClient() {
       <form action={saveImport} className="card space-y-3 p-4">
         <input type="hidden" name="url" value={data.url} />
         <input type="hidden" name="html" value={data.html} />
-        <h3 className="font-semibold">{preview.existing.length ? "…oder neu hinzufügen zu" : "Zu welchem Stopp hinzufügen?"}</h3>
+        <h3 className="font-display text-xl">{preview.existing.length ? "…oder neu hinzufügen zu" : "Zu welchem Stopp hinzufügen?"}</h3>
         {preview.stops.length === 0 ? (
           <p className="text-sm text-slate-500">Lege zuerst einen Urlaub mit Stopps an.</p>
         ) : (

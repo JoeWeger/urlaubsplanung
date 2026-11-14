@@ -1,7 +1,48 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------
+   Design-System „Reisetagebuch“
+   Warme Sandtöne, Tinte statt Schwarz, Kieferngrün als Akzent.
+   slate/sky werden global umgefärbt, damit alle Seiten einheitlich wirken.
+   ------------------------------------------------------------------ */
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+
+  --color-ink: #1d1a16;
+  --color-paper: #fffdf8;
+  --color-sand: #f4efe6;
+  --color-sand-deep: #ebe3d5;
+  --color-line: #e6ddcd;
+  --color-clay: #c2603a;
+  --color-gold: #b8892f;
+
+  /* Warmes Grau statt kaltem Slate */
+  --color-slate-50: #faf8f4;
+  --color-slate-100: #f3efe8;
+  --color-slate-200: #e6dfd3;
+  --color-slate-300: #d2c9ba;
+  --color-slate-400: #a59c8e;
+  --color-slate-500: #7c7366;
+  --color-slate-600: #5d564c;
+  --color-slate-700: #463f37;
+  --color-slate-800: #2d2822;
+  --color-slate-900: #1d1a16;
+
+  /* Kieferngrün statt Himmelblau */
+  --color-sky-50: #eef5f1;
+  --color-sky-100: #d7e9e0;
+  --color-sky-200: #b0d3c3;
+  --color-sky-300: #82b7a1;
+  --color-sky-400: #55977f;
+  --color-sky-500: #3a7c66;
+  --color-sky-600: #2e6553;
+  --color-sky-700: #265244;
+  --color-sky-800: #1f4238;
+  --color-sky-900: #1a372f;
+
+  --shadow-soft: 0 1px 2px rgb(45 35 20 / 0.04), 0 8px 24px -12px rgb(45 35 20 / 0.12);
+  --shadow-lift: 0 2px 4px rgb(45 35 20 / 0.05), 0 18px 40px -18px rgb(45 35 20 / 0.28);
 }
 
 :root {
@@ -9,36 +50,74 @@
 }
 
 body {
-  background: #f6f7f9;
-  color: #0f172a;
+  background-color: var(--color-sand);
+  background-image:
+    radial-gradient(1200px 600px at 100% -10%, rgb(255 255 255 / 0.7), transparent 60%),
+    radial-gradient(900px 500px at -10% 0%, rgb(232 222 204 / 0.6), transparent 60%);
+  background-attachment: fixed;
+  color: var(--color-ink);
+  font-feature-settings: "ss01", "cv11";
+}
+
+::selection {
+  background: #d7e9e0;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.01em;
+}
+
+@utility font-display {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  letter-spacing: -0.02em;
 }
 
 @utility card {
-  @apply rounded-2xl border border-slate-200 bg-white shadow-sm;
+  @apply rounded-3xl border border-line bg-paper;
+  box-shadow: var(--shadow-soft);
+}
+@utility card-hover {
+  @apply transition duration-300;
+  &:hover {
+    box-shadow: var(--shadow-lift);
+    transform: translateY(-2px);
+  }
 }
 @utility btn {
-  @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition disabled:opacity-50 cursor-pointer;
+  @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition duration-200 disabled:opacity-50;
 }
 @utility btn-primary {
-  @apply btn bg-sky-600 text-white hover:bg-sky-700;
+  @apply btn bg-ink text-paper hover:bg-slate-700 active:scale-[0.98];
+}
+@utility btn-accent {
+  @apply btn bg-sky-600 text-white hover:bg-sky-700 active:scale-[0.98];
 }
 @utility btn-ghost {
-  @apply btn text-slate-600 hover:bg-slate-100;
+  @apply btn text-slate-600 hover:bg-slate-900/5 hover:text-ink;
+}
+@utility btn-outline {
+  @apply btn border border-line bg-paper text-slate-700 hover:border-slate-300 hover:text-ink;
 }
 @utility btn-danger {
-  @apply btn text-red-600 hover:bg-red-50;
+  @apply btn text-red-700 hover:bg-red-50;
 }
 @utility input {
-  @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100;
+  @apply w-full rounded-xl border border-line bg-white/70 px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:ring-4 focus:ring-sky-100;
 }
 @utility label {
-  @apply mb-1 block text-xs font-medium text-slate-500;
+  @apply mb-1.5 block text-[11px] font-semibold tracking-wider text-slate-500 uppercase;
 }
 @utility chip {
-  @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
+  @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium;
+}
+@utility eyebrow {
+  @apply text-[11px] font-semibold tracking-[0.18em] text-slate-500 uppercase;
 }
 @utility h2 {
-  @apply text-lg font-semibold text-slate-900;
+  @apply font-display text-2xl font-medium text-ink;
 }
 
 details > summary {
@@ -46,4 +125,41 @@ details > summary {
 }
 details > summary::-webkit-details-marker {
   display: none;
+}
+
+/* Sanftes Einblenden der Seiten */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rise {
+    animation: none;
+  }
+}
+
+/* Feines Papierkorn für Hero-Flächen */
+.grain {
+  position: relative;
+  isolation: isolate;
+}
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.18;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  pointer-events: none;
+  border-radius: inherit;
 }

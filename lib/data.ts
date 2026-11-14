@@ -122,3 +122,24 @@ export const getFlightFiles = (tripId: number) =>
     "SELECT ff.id, ff.flight_id, ff.filename, ff.mime, ff.size FROM flight_files ff JOIN flights f ON f.id=ff.flight_id WHERE f.trip_id=$1 ORDER BY ff.id",
     [tripId],
   );
+
+/** Titelbild pro Urlaub: gebuchtes Hotel > Favorit > irgendein Hotel mit Bild */
+export const getTripCovers = async () => {
+  const rows = await query<{ trip_id: number; image: string }>(
+    `SELECT DISTINCT ON (s.trip_id) s.trip_id, h.image FROM hotels h JOIN stops s ON s.id=h.stop_id
+     WHERE h.image IS NOT NULL AND h.status <> 'rejected'
+     ORDER BY s.trip_id, CASE h.status WHEN 'booked' THEN 0 WHEN 'favorite' THEN 1 ELSE 2 END, s.start_date NULLS LAST, h.id`,
+  );
+  return new Map(rows.map((r) => [r.trip_id, r.image]));
+};
+
+/** Titelbild pro Stopp */
+export const getStopCovers = async (tripId: number) => {
+  const rows = await query<{ stop_id: number; image: string }>(
+    `SELECT DISTINCT ON (h.stop_id) h.stop_id, h.image FROM hotels h JOIN stops s ON s.id=h.stop_id
+     WHERE s.trip_id=$1 AND h.image IS NOT NULL AND h.status <> 'rejected'
+     ORDER BY h.stop_id, CASE h.status WHEN 'booked' THEN 0 WHEN 'favorite' THEN 1 ELSE 2 END, h.id`,
+    [tripId],
+  );
+  return new Map(rows.map((r) => [r.stop_id, r.image]));
+};

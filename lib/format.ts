@@ -100,3 +100,20 @@ export function hostOf(url?: string | null): string {
     return url;
   }
 }
+
+/** Alte, knallige Reisefarben auf die neue, erdige Palette abbilden */
+const LEGACY_COLORS: Record<string, string> = {
+  "#0ea5e9": "#2f6a8a",
+  "#f97316": "#c2603a",
+  "#10b981": "#2e6553",
+  "#8b5cf6": "#7a4e6d",
+  "#ef4444": "#c06b77",
+  "#eab308": "#b8892f",
+  "#ec4899": "#c06b77",
+  "#14b8a6": "#6f8a5c",
+};
+
+export function tripColor(c?: string | null): string {
+  if (!c) return "#2e6553";
+  return LEGACY_COLORS[c.toLowerCase()] ?? c;
+}

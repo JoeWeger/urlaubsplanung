@@ -1,6 +1,7 @@
 import type { Trip } from "@/lib/data";
+import { tripColor } from "@/lib/format";
 
-const COLORS = ["#0ea5e9", "#f97316", "#10b981", "#8b5cf6", "#ef4444", "#eab308", "#ec4899", "#14b8a6"];
+const COLORS = ["#2e6553", "#c2603a", "#2f6a8a", "#b8892f", "#7a4e6d", "#6f8a5c", "#c06b77", "#4d5a8a"];
 
 export function TripFields({ trip }: { trip?: Trip }) {
   return (
@@ -30,11 +31,11 @@ export function TripFields({ trip }: { trip?: Trip }) {
                 type="radio"
                 name="color"
                 value={c}
-                defaultChecked={trip ? trip.color === c : i === 0}
+                defaultChecked={trip ? tripColor(trip.color) === c : i === 0}
                 className="peer sr-only"
               />
               <span
-                className="block h-7 w-7 rounded-full ring-offset-2 peer-checked:ring-2 peer-checked:ring-slate-900"
+                className="block h-7 w-7 rounded-full ring-offset-2 shadow-inner ring-offset-2 ring-offset-paper transition peer-checked:scale-110 peer-checked:ring-2 peer-checked:ring-ink"
                 style={{ background: c }}
               />
             </label>

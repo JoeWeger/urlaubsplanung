@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS trips (
   destination TEXT,
   start_date TEXT,
   end_date TEXT,
-  color TEXT DEFAULT '#0ea5e9',
+  color TEXT DEFAULT '#2e6553',
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );

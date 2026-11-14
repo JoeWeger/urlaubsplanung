@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getAllStops, getTrips } from "@/lib/data";
-import { addDays, toISODate } from "@/lib/format";
+import { addDays, toISODate, tripColor } from "@/lib/format";
 import { findGaps } from "@/lib/gaps";
 import { Month, type CalEvent } from "@/components/Calendar";
 import { SetupNotice } from "@/components/SetupNotice";
@@ -12,7 +12,7 @@ export default async function KalenderPage({ searchParams }: { searchParams: Pro
   let events: CalEvent[] = [];
   try {
     const [trips, stops] = await Promise.all([getTrips(), getAllStops()]);
-    const color = new Map(trips.map((t) => [t.id, t.color ?? "#0ea5e9"]));
+    const color = new Map(trips.map((t) => [t.id, tripColor(t.color)]));
     events = [
       ...trips
         .filter((t) => t.start_date)
@@ -20,7 +20,7 @@ export default async function KalenderPage({ searchParams }: { searchParams: Pro
           start: t.start_date!,
           end: t.end_date,
           label: t.name,
-          color: t.color ?? "#0ea5e9",
+          color: tripColor(t.color),
           href: `/trips/${t.id}`,
           kind: "trip",
         })),
@@ -30,7 +30,7 @@ export default async function KalenderPage({ searchParams }: { searchParams: Pro
           start: s.start_date!,
           end: s.end_date && s.end_date > s.start_date! ? addDays(s.end_date, -1) : s.start_date,
           label: s.name,
-          color: color.get(s.trip_id) ?? "#0ea5e9",
+          color: color.get(s.trip_id) ?? "#2e6553",
           href: `/trips/${s.trip_id}/stops/${s.id}`,
           kind: "stop",
         })),
@@ -39,7 +39,7 @@ export default async function KalenderPage({ searchParams }: { searchParams: Pro
           start: g.start,
           end: addDays(g.end, -1),
           label: "Offen",
-          color: "#dc2626",
+          color: "#c2603a",
           href: `/trips/${t.id}`,
           kind: "gap",
         })),
@@ -62,9 +62,9 @@ export default async function KalenderPage({ searchParams }: { searchParams: Pro
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold">Kalender</h1>
-        <div className="flex gap-1">
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-3">
+        <div><p className="eyebrow">Überblick</p><h1 className="font-display text-4xl font-light sm:text-5xl">Kalender</h1></div>
+        <div className="flex gap-1 rounded-full border border-line bg-paper p-1">
           <Link href={`/kalender?m=${prev}`} className="btn-ghost">← Zurück</Link>
           <Link href="/kalender" className="btn-ghost">Heute</Link>
           <Link href={`/kalender?m=${next}`} className="btn-ghost">Weiter →</Link>
