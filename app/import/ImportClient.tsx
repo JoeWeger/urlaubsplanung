@@ -69,8 +69,8 @@ export function ImportClient() {
             <div>
               <div className="text-xs text-slate-400">Bewertung</div>
               <div className="font-semibold">
-                {l.rating != null ? `${l.rating_scale === 5 ? "★ " : ""}${l.rating}${l.rating_scale ? ` / ${l.rating_scale}` : ""}` : "–"}
-                {l.review_count != null && <span className="font-normal text-slate-500"> ({l.review_count})</span>}
+                {l.rating != null ? `${l.rating_scale === 5 ? "★ " : ""}${l.rating.toLocaleString("de-DE")}${l.rating_scale ? ` / ${l.rating_scale}` : ""}` : "–"}
+                {l.review_count != null && <span className="font-normal text-slate-500"> ({l.review_count.toLocaleString("de-DE")})</span>}
               </div>
             </div>
             <div>

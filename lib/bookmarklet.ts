@@ -21,7 +21,7 @@ export function bookmarkletCode(origin: string): string {
   const g=document.querySelector('[data-testid="property-gallery"] img,[data-testid="photo-viewer-section"] img,picture img');
   x('x-img',g&&(g.currentSrc||g.src));
   if(!document.querySelector('meta[property="og:image"]')){const im=[...document.images].find(i=>i.naturalWidth>=500);x('x-img2',im&&(im.currentSrc||im.src))}
-  x('x-text',(document.body.innerText||'').replace(/[ \t]+/g,' ').slice(0,15000));
+  x('x-text',(document.body.innerText||'').replace(/[ \t]+/g,' ').slice(0,40000));
   const u=A+'/import#u='+encodeURIComponent(location.href)+'&h='+encodeURIComponent(h);
   const w=window.open(u,'_blank');
   if(!w)location.href=u;

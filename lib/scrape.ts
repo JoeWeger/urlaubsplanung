@@ -161,10 +161,14 @@ function addressStr(v: unknown): string | null {
   if (!v) return null;
   if (typeof v === "string") return v;
   const a = v as Record<string, unknown>;
-  const parts = [a.streetAddress, a.postalCode, a.addressLocality, a.addressRegion, a.addressCountry]
-    .map((p) => (typeof p === "object" && p ? str((p as Record<string, unknown>).name) : str(p)))
-    .filter(Boolean);
-  return parts.length ? parts.join(", ") : null;
+  const norm = (x: string) => x.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const out: string[] = [];
+  for (const raw of [a.streetAddress, a.postalCode, a.addressLocality, a.addressRegion, a.addressCountry]) {
+    const p = typeof raw === "object" && raw ? str((raw as Record<string, unknown>).name) : str(raw);
+    // Booking liefert oft schon "Straße, Viertel, PLZ Ort, Land" in streetAddress → nichts doppelt anhängen
+    if (p && !norm(out.join(", ")).includes(norm(p))) out.push(p);
+  }
+  return out.length ? out.join(", ") : null;
 }
 
 /** Name aus der URL ableiten, falls die Seite nicht geladen werden kann */
@@ -238,6 +242,43 @@ export function pricesFromText(raw: string): {
     }
   }
   return { total: gesamt ?? forNights, perNight };
+}
+
+/**
+ * Booking-Hotelseite (sichtbarer Text): Gesamtpreis für die gewählten Daten.
+ * 1) "Ihre Suchdaten € 124" in der Preis-Vergleichsleiste
+ * 2) Erste Zeile der Zimmertabelle nach "Preis für N Nächte" / "Der Preis heute"
+ *    (bei "€ 146 € 124" ist der zweite Wert der aktuelle Preis)
+ */
+export function bookingPriceFromText(raw: string): { amount: number; currency: string | null } | null {
+  const text = raw.replace(/[   ]/g, " ");
+  const tokenAfter = (from: number, span: number) => {
+    const slice = text.slice(from, from + span);
+    const re = new RegExp(PRICE_RE.source, "g");
+    const toks: { amount: number; currency: string | null; idx: number; end: number }[] = [];
+    for (const m of slice.matchAll(re)) {
+      const amount = num(m[2] ?? m[3]);
+      const sym = m[1] ?? m[4];
+      if (amount == null || amount < 5) continue;
+      toks.push({ amount, currency: CURRENCY_SYMBOLS[sym] || (sym.length === 3 ? sym : null), idx: m.index!, end: m.index! + m[0].length });
+    }
+    return toks;
+  };
+  const search = text.search(/Ihre Suchdaten|Your search dates|Deine Suchdaten/i);
+  if (search >= 0) {
+    const t = tokenAfter(search, 60)[0];
+    if (t) return { amount: t.amount, currency: t.currency };
+  }
+  const head = text.search(/Preis für \d+ N(ä|ae)chte?|Der Preis heute|Price for \d+ nights?|Today'?s price/i);
+  if (head >= 0) {
+    const toks = tokenAfter(head, 900);
+    if (toks.length) {
+      // durchgestrichener Preis direkt gefolgt vom aktuellen Preis
+      if (toks[1] && toks[1].idx - toks[0].end < 12) return { amount: toks[1].amount, currency: toks[1].currency };
+      return { amount: toks[0].amount, currency: toks[0].currency };
+    }
+  }
+  return null;
 }
 
 export function parseListingHtml(html: string, url: URL): Partial<ScrapedListing> {
@@ -369,6 +410,14 @@ export function parseListingHtml(html: string, url: URL): Partial<ScrapedListing
 
   // Preis aus dem sichtbaren Buchungsbereich (nur per Lesezeichen verfügbar)
   let totalFromPage: number | null = null;
+  if (source === "booking") {
+    const t = meta(html, "x-text");
+    const b = t ? bookingPriceFromText(t) : null;
+    if (b) {
+      totalFromPage = b.amount;
+      currency = b.currency ?? currency;
+    }
+  }
   for (const priceText of [meta(html, "x-price"), source === "airbnb" ? meta(html, "x-text") : null]) {
     if (!priceText || totalFromPage != null) continue;
     const found = pricesFromText(priceText);
@@ -382,6 +431,7 @@ export function parseListingHtml(html: string, url: URL): Partial<ScrapedListing
   }
   if (totalFromPage != null) {
     r.price_total = totalFromPage;
+    r.price_per_night = null;
     r.currency = currency || null;
   }
 
@@ -499,11 +549,18 @@ async function prepare(rawUrl: string): Promise<Prepared> {
 
 function merge(p: Prepared, parsed: Partial<ScrapedListing>): ScrapedListing {
   const merged: ScrapedListing = { ...p.base, fetched: true };
+  // Gesamtpreis direkt von der Seite (so wie Booking/Airbnb ihn dir anzeigen) ist am genauesten
+  const pageTotal = parsed.price_total != null;
   for (const [k, v] of Object.entries(parsed)) {
     if (v == null || v === "") continue;
-    // Preis aus dem Link (gewähltes Zimmer + Daten) ist genauer als "ab"-Preise der Seite
-    if (p.urlPrice && (k === "price_per_night" || k === "currency")) continue;
+    // Sonst: Preis aus dem Link (gewähltes Zimmer + Daten) ist genauer als "ab"-Preise der Seite
+    if (!pageTotal && p.urlPrice && (k === "price_per_night" || k === "currency")) continue;
     (merged as Record<string, unknown>)[k] = v;
+  }
+  if (pageTotal) {
+    merged.orig_price = null;
+    merged.orig_currency = null;
+    merged.price_per_night = p.n ? Math.round((merged.price_total! / p.n) * 100) / 100 : null;
   }
   if (merged.price_total == null && merged.price_per_night != null && p.n) {
     merged.price_total = Math.round(merged.price_per_night * p.n);
