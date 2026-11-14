@@ -20,6 +20,7 @@ import {
   getTrip,
   type Flight,
   type FlightFile,
+  type Hotel,
 } from "@/lib/data";
 import { addDays, fmtMoney, fmtRange, fmtShort, nightsBetween, toISODate, tripColor } from "@/lib/format";
 import { Month, monthsBetween, type CalEvent } from "@/components/Calendar";
@@ -57,8 +58,26 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
 
   // Budget
   const flightCost = flights.reduce((a, f) => a + (f.price ?? 0), 0);
-  const booked = hotels.filter((h) => h.status === "booked");
-  const hotelCost = booked.reduce((a, h) => a + (h.price_total ?? 0), 0);
+  // Pro Stopp: gebuchtes Hotel, sonst Favorit (bei mehreren der günstigste)
+  const hotelTotal = (h: Hotel) => {
+    if (h.price_total != null) return h.price_total;
+    const st = stops.find((x) => x.id === h.stop_id);
+    const n = nightsBetween(h.checkin, h.checkout) ?? nightsBetween(st?.start_date, st?.end_date);
+    return h.price_per_night != null && n ? Math.round(h.price_per_night * n) : null;
+  };
+  const chosenFor = (stopId: number) => {
+    const hs = hotels.filter((h) => h.stop_id === stopId);
+    const b = hs.find((h) => h.status === "booked");
+    if (b) return { hotel: b, booked: true, price: hotelTotal(b) };
+    const favs = hs
+      .filter((h) => h.status === "favorite")
+      .sort((a, z) => (hotelTotal(a) ?? Infinity) - (hotelTotal(z) ?? Infinity));
+    return favs[0] ? { hotel: favs[0], booked: false, price: hotelTotal(favs[0]) } : null;
+  };
+  const chosen = stops.map((s) => chosenFor(s.id)).filter((c): c is NonNullable<typeof c> => c != null);
+  const bookedCost = chosen.filter((c) => c.booked).reduce((a, c) => a + (c.price ?? 0), 0);
+  const favCost = chosen.filter((c) => !c.booked).reduce((a, c) => a + (c.price ?? 0), 0);
+  const hotelCost = bookedCost + favCost;
   const actCost = activities.reduce((a, x) => a + (x.cost ?? 0), 0);
   const total = flightCost + hotelCost + actCost;
 
@@ -132,9 +151,13 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
 
         {/* Kennzahlen */}
         <div className="card relative z-10 mx-3 -mt-8 grid grid-cols-2 divide-line sm:mx-8 sm:grid-cols-4 sm:divide-x">
-          <Stat label="Gesamtbudget" value={fmtMoney(total)} strong />
+          <Stat label="Gesamtbudget" value={fmtMoney(total)} strong note={favCost > 0 ? "inkl. Favoriten" : undefined} />
           <Stat label="Flüge" value={fmtMoney(flightCost)} />
-          <Stat label="Unterkünfte (gebucht)" value={fmtMoney(hotelCost)} />
+          <Stat
+            label="Unterkünfte"
+            value={fmtMoney(hotelCost)}
+            note={favCost > 0 ? `${fmtMoney(bookedCost)} gebucht · ${fmtMoney(favCost)} Favoriten` : bookedCost > 0 ? "alles gebucht" : undefined}
+          />
           <Stat label="Aktivitäten" value={fmtMoney(actCost)} />
         </div>
 
@@ -181,7 +204,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
               const s = stops[i];
               const hs = hotels.filter((h) => h.stop_id === s.id && h.status !== "rejected");
               const acts = activities.filter((a) => a.stop_id === s.id);
-              const bookedHotel = hs.find((h) => h.status === "booked");
+              const pick = chosenFor(s.id);
               const n = nightsBetween(s.start_date, s.end_date);
               const img = stopCovers.get(s.id);
               return (
@@ -206,8 +229,14 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
                       </div>
                       {s.description && <p className="mt-1 line-clamp-2 text-sm text-slate-500">{s.description}</p>}
                       <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                        {bookedHotel ? (
-                          <span className="chip bg-sky-50 text-sky-800">✓ {bookedHotel.name}</span>
+                        {pick ? (
+                          <span className={`chip max-w-full ${pick.booked ? "bg-sky-50 text-sky-800" : "bg-gold/10 text-[#8a6620]"}`}>
+                            <span className="shrink-0">{pick.booked ? "✓" : "★"}</span>
+                            <span className="truncate">{pick.hotel.name}</span>
+                            {pick.price != null && (
+                              <span className="shrink-0 font-semibold">· {fmtMoney(pick.price, pick.hotel.currency)}</span>
+                            )}
+                          </span>
                         ) : hs.length ? (
                           <span className="chip bg-gold/10 text-[#8a6620]">
                             {hs.length} {hs.length === 1 ? "Unterkunft" : "Unterkünfte"} in Auswahl
@@ -312,11 +341,12 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   );
 }
 
-function Stat({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+function Stat({ label, value, strong = false, note }: { label: string; value: string; strong?: boolean; note?: string }) {
   return (
     <div className="px-5 py-4">
       <div className="text-[11px] tracking-wider text-slate-500 uppercase">{label}</div>
       <div className={`font-display mt-0.5 tabular-nums ${strong ? "text-3xl" : "text-2xl text-slate-700"}`}>{value}</div>
+      {note && <div className="mt-0.5 text-[11px] text-slate-400">{note}</div>}
     </div>
   );
 }
