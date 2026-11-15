@@ -14,7 +14,7 @@ import {
 import { fmtMoneyExact as fmtMoney, fmtRange, fmtShort, nightsBetween, toISODate, tripColor } from "@/lib/format";
 import { PaymentControls } from "@/components/PaymentControls";
 import { ConfirmButton, SubmitButton } from "@/components/ui";
-import { PAYMENT_METHODS, effectiveMethod, methodInfo } from "@/lib/payment-methods";
+import { FIN_GRID, PAYMENT_METHODS, effectiveMethod, methodInfo } from "@/lib/payment-methods";
 
 export const dynamic = "force-dynamic";
 
@@ -227,56 +227,85 @@ export default async function FinanzenPage({ params }: { params: Promise<{ id: s
             Noch nichts gebucht. Flüge erscheinen automatisch, Hotels sobald du sie auf „Gebucht“ setzt – oder unten übernehmen.
           </div>
         )}
+        {items.length > 0 && (
+          <div className={`hidden gap-3 px-4 text-[10px] font-semibold tracking-widest text-slate-400 uppercase lg:grid ${FIN_GRID}`}>
+            <span>Posten</span>
+            <span className="text-right">Betrag</span>
+            <span>Zahlung</span>
+            <span>{partner}</span>
+            <span>Storno bis</span>
+            <span />
+          </div>
+        )}
         {GROUPS.map((g) => {
           const list = items.filter((it) => it.type === g.type);
           if (!list.length) return null;
           const sum = list.reduce((a, it) => a + amountOf(it), 0);
+          const owes = list.filter((it) => isShared(it) && !it.payment?.partner_paid).reduce((a, it) => a + amountOf(it) / 2, 0);
           return (
             <div key={g.type}>
-              <div className="mb-3 flex items-baseline justify-between">
-                <h2 className="h2">{g.label}</h2>
-                <span className="font-display text-xl text-slate-500 tabular-nums">{fmtMoney(sum)}</span>
-              </div>
-              <div className="space-y-3">
+              <h2 className="h2 mb-3">{g.label}</h2>
+              <div className="space-y-2">
                 {list.map((it) => (
-                  <div key={it.key} className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div key={it.key} className={`card grid gap-3 p-3 pl-4 lg:items-center ${FIN_GRID}`}>
                     <div className="flex min-w-0 items-center gap-3">
-                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-sand-deep text-lg">{it.icon}</span>
-                      <div className="min-w-0">
-                        <div className="truncate font-medium">{it.title}</div>
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-sand-deep">{it.icon}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium" title={it.title}>{it.title}</div>
                         {it.sub && <div className="truncate text-xs text-slate-500">{it.sub}</div>}
                       </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                      <PaymentControls
-                        tripId={trip.id}
-                        itemType={it.type}
-                        itemId={it.itemId}
-                        paymentId={it.payment?.id ?? null}
-                        paid={it.payment?.paid ?? false}
-                        method={it.payment?.payment_method ?? null}
-                        partnerPaid={it.payment?.partner_paid ?? false}
-                        shared={it.payment?.shared ?? true}
-                        cancelUntil={it.payment?.cancel_until ?? null}
-                        amount={it.payment?.amount ?? null}
-                        defaultAmount={it.defaultAmount}
-                        partnerName={partner}
-                        today={today}
-                      />
                       {it.type === "custom" && it.payment && (
                         <form action={deleteExpense}>
                           <input type="hidden" name="id" value={it.payment.id} />
                           <input type="hidden" name="trip_id" value={trip.id} />
-                          <ConfirmButton className="btn-danger px-2 py-1 text-xs" message="Posten löschen?">✕</ConfirmButton>
+                          <ConfirmButton className="cursor-pointer px-1 text-xs text-slate-300 hover:text-red-600" message="Posten löschen?">✕</ConfirmButton>
                         </form>
                       )}
                     </div>
+                    <PaymentControls
+                      tripId={trip.id}
+                      itemType={it.type}
+                      itemId={it.itemId}
+                      paymentId={it.payment?.id ?? null}
+                      paid={it.payment?.paid ?? false}
+                      method={it.payment?.payment_method ?? null}
+                      partnerPaid={it.payment?.partner_paid ?? false}
+                      shared={it.payment?.shared ?? true}
+                      cancelUntil={it.payment?.cancel_until ?? null}
+                      amount={it.payment?.amount ?? null}
+                      defaultAmount={it.defaultAmount}
+                      partnerName={partner}
+                      today={today}
+                    />
                   </div>
                 ))}
+                {/* Summenzeile der Gruppe */}
+                <div className={`flex flex-wrap items-baseline justify-between gap-x-3 px-4 pt-1 text-sm lg:grid lg:items-center ${FIN_GRID}`}>
+                  <span className="text-slate-500">Summe {g.label}</span>
+                  <span className="font-display text-right text-lg tabular-nums">{fmtMoney(sum)}</span>
+                  <span className="hidden lg:block" />
+                  <span className={`w-full text-right tabular-nums lg:w-auto lg:px-3 lg:text-left ${owes > 0.005 ? "text-clay" : "text-slate-400"}`}>
+                    <span className="lg:hidden">{partner} offen: </span>
+                    {owes > 0.005 ? fmtMoney(owes) : "✓"}
+                  </span>
+                </div>
               </div>
             </div>
           );
         })}
+        {items.length > 0 && (
+          <div className={`card grid gap-3 border-ink/20 bg-sand-deep/40 p-4 lg:items-center ${FIN_GRID}`}>
+            <span className="font-display text-xl">Gesamt</span>
+            <span className="font-display text-right text-xl tabular-nums">{fmtMoney(total)}</span>
+            <span className="text-xs text-slate-500">bezahlt {fmtMoney(paid)}</span>
+            <span className="lg:col-span-3">
+              <span className={`font-display text-xl tabular-nums ${partnerOwes > 0.005 ? "text-clay" : "text-sky-700"}`}>
+                {partnerOwes > 0.005 ? `${partner} schuldet dir ${fmtMoney(partnerOwes)}` : `${partner}: alles ausgeglichen ✓`}
+              </span>
+              {partnerPaid > 0 && <span className="ml-2 text-xs text-slate-500">({fmtMoney(partnerPaid)} schon überwiesen)</span>}
+            </span>
+          </div>
+        )}
         {missingAmount.length > 0 && (
           <p className="text-xs text-clay">
             ⚠ Bei {missingAmount.length} {missingAmount.length === 1 ? "Posten fehlt" : "Posten fehlen"} der Betrag – direkt im Feld eintragen.

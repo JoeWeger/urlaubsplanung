@@ -57,16 +57,17 @@ export function PaymentControls(p: Props) {
             : "border-line text-slate-600";
 
   return (
-    <div className={`flex flex-wrap items-center gap-2 transition ${pending ? "opacity-70" : ""}`}>
+    // Mobil: Umbruch; ab lg: "contents" → jedes Element ist eine Zelle im Tabellenraster der Zeile
+    <div className={`flex flex-wrap items-center gap-2 transition lg:contents ${pending ? "opacity-70" : ""}`}>
       {/* Betrag */}
-      <label className="flex items-center gap-1 rounded-full border border-line bg-white/70 px-3 py-1.5 text-sm">
+      <label className="flex w-28 items-center gap-1 rounded-full border border-line bg-white/70 px-3 py-1.5 text-sm lg:w-full">
         <input
           type="number"
           step="0.01"
           inputMode="decimal"
           defaultValue={amount ?? ""}
           placeholder="Betrag"
-          className="w-20 bg-transparent text-right tabular-nums outline-none"
+          className="w-full min-w-0 bg-transparent text-right tabular-nums outline-none"
           onBlur={(e) => {
             const v = e.currentTarget.value === "" ? null : Number(e.currentTarget.value);
             if (v !== amount) {
@@ -81,7 +82,7 @@ export function PaymentControls(p: Props) {
 
       {/* Zahlung: womit bzw. noch offen */}
       <label
-        className={`relative flex cursor-pointer items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+        className={`relative flex cursor-pointer items-center justify-between gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition lg:w-full ${
           info?.paid
             ? "border-sky-700 bg-sky-700 text-white"
             : method === "onsite"
@@ -90,8 +91,9 @@ export function PaymentControls(p: Props) {
         }`}
         title="Zahlung"
       >
-        <span>{info?.icon}</span>
-        <span>{info?.paid && method !== "other" ? `Bezahlt · ${info.short}` : info?.short}</span>
+        <span className="truncate">
+          {info?.icon} {info?.paid && method !== "other" ? `Bezahlt · ${info.short}` : info?.short}
+        </span>
         <span className="opacity-60">▾</span>
         <select
           value={method}
@@ -118,26 +120,22 @@ export function PaymentControls(p: Props) {
             setPartnerPaid(!partnerPaid);
             save({ partner_paid: String(!partnerPaid) });
           }}
-          className={`btn border px-3 py-1.5 text-xs ${partnerPaid ? "border-sky-200 bg-sky-50 text-sky-800" : "border-clay/40 bg-clay/5 text-clay hover:border-clay"}`}
-          title={`${p.partnerName}s Anteil (die Hälfte)`}
+          className={`btn justify-between border px-3 py-1.5 text-xs lg:w-full ${partnerPaid ? "border-sky-200 bg-sky-50 text-sky-800" : "border-clay/40 bg-clay/5 text-clay hover:border-clay"}`}
+          title={partnerPaid ? "Klicken = doch noch offen" : `Klicken, wenn ${p.partnerName} überwiesen hat`}
         >
-          {partnerPaid ? `✓ ${p.partnerName} hat überwiesen` : `${p.partnerName} schuldet ${share ? eur(share) : "½"}`}
+          <span>
+            <span className="lg:hidden">{partnerPaid ? "✓ " + p.partnerName + " hat " : p.partnerName + " "}</span>
+            <span className="hidden lg:inline">{partnerPaid ? "✓ " : ""}</span>
+            {partnerPaid ? "überwiesen" : "schuldet"}
+          </span>
+          <span className="tabular-nums">{share ? eur(share) : "½"}</span>
         </button>
       ) : (
-        <span className="chip border border-line text-slate-400">Nur ich</span>
+        <span className="chip justify-center border border-line text-slate-400 lg:w-full lg:py-1.5">nur ich</span>
       )}
 
       {/* Stornierbar bis */}
-      <label className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${deadlineCls}`}>
-        <span className="whitespace-nowrap">
-          {daysLeft == null
-            ? "Storno bis"
-            : daysLeft < 0
-              ? "Storno abgelaufen"
-              : daysLeft === 0
-                ? "Storno heute!"
-                : `Storno noch ${daysLeft} T.`}
-        </span>
+      <label className={`flex items-center justify-between gap-1.5 rounded-full border px-3 py-1 text-xs lg:w-full ${deadlineCls}`} title="Kostenlos stornierbar bis">
         <input
           type="date"
           value={cancelUntil}
@@ -145,8 +143,13 @@ export function PaymentControls(p: Props) {
             setCancelUntil(e.currentTarget.value);
             save({ cancel_until: e.currentTarget.value });
           }}
-          className="bg-transparent text-xs outline-none"
+          className="min-w-0 bg-transparent text-xs outline-none"
         />
+        {daysLeft != null && (
+          <span className="shrink-0 whitespace-nowrap font-medium">
+            {daysLeft < 0 ? "vorbei" : daysLeft === 0 ? "heute!" : `${daysLeft} T.`}
+          </span>
+        )}
       </label>
 
       {/* Geteilt umschalten */}
@@ -156,9 +159,9 @@ export function PaymentControls(p: Props) {
           setShared(!shared);
           save({ shared: String(!shared) });
         }}
-        className="text-[11px] text-slate-400 underline-offset-2 hover:text-ink hover:underline"
+        className="text-left text-[11px] text-slate-400 underline-offset-2 hover:text-ink hover:underline"
       >
-        {shared ? "nur für mich" : `mit ${p.partnerName} teilen`}
+        {shared ? "nur für mich" : "teilen"}
       </button>
     </div>
   );

@@ -16,3 +16,6 @@ export function effectiveMethod(method: string | null | undefined, paid: boolean
   if (method && methodInfo(method)) return method as PaymentMethod;
   return paid ? "other" : "open";
 }
+
+/** Spalten der Finanztabelle: Posten | Betrag | Zahlung | Anteil | Storno bis | Teilen */
+export const FIN_GRID = "lg:grid-cols-[minmax(0,1fr)_7.5rem_11rem_10.5rem_11.5rem_5.5rem]";
