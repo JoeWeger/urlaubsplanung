@@ -88,8 +88,11 @@ export default async function StopPage({
   if (stop.start_date && stop.end_date) {
     for (let d = stop.start_date; d <= stop.end_date && days.length < 60; d = addDays(d, 1)) days.push(d);
   }
+  const restaurants = activities.filter((a) => a.category === "restaurant");
+  const things = activities.filter((a) => a.category !== "restaurant");
+  const dayOptions = days.map((d) => ({ value: d, label: fmtDate(d) }));
   const byDay = new Map<string, Activity[]>();
-  for (const a of activities) {
+  for (const a of things) {
     const k = a.date ?? "";
     byDay.set(k, [...(byDay.get(k) ?? []), a]);
   }
@@ -264,7 +267,7 @@ export default async function StopPage({
         <div>
           <p className="eyebrow">Erleben</p>
           <h2 className="h2 mb-5">Geplant in {stop.name}</h2>
-          {activities.length === 0 && (
+          {things.length === 0 && (
             <div className="card p-8 text-center text-sm text-slate-500">Noch nichts geplant – Aktivitäten, Restaurants und Ausflüge rechts eintragen.</div>
           )}
           <div className="space-y-8">
@@ -297,12 +300,51 @@ export default async function StopPage({
               <p className="eyebrow">Neu</p>
               <h3 className="font-display text-xl">Aktivität oder Idee</h3>
             </div>
-            <ActivityImport stopId={stop.id} days={days.map((d) => ({ value: d, label: fmtDate(d) }))} />
+            <ActivityImport stopId={stop.id} days={dayOptions} />
           </div>
           <form action={createActivity} className="card space-y-4 p-5">
             <p className="eyebrow">…oder selbst eintragen</p>
             <input type="hidden" name="stop_id" value={stop.id} />
             <ActivityFields days={days} />
+            <SubmitButton className="btn-primary w-full">Hinzufügen</SubmitButton>
+          </form>
+        </aside>
+      </section>
+
+      {/* Restaurants */}
+      <section className="grid gap-8 lg:grid-cols-[1fr_360px]">
+        <div>
+          <p className="eyebrow">Essen &amp; Trinken</p>
+          <h2 className="h2 mb-5">
+            Restaurants <span className="text-slate-400">{restaurants.length || ""}</span>
+          </h2>
+          {restaurants.length === 0 ? (
+            <div className="card p-8 text-center text-sm text-slate-500">
+              Noch keine Restaurants – rechts per Link (TheFork, OpenTable, Tripadvisor, Website) oder von Hand eintragen.
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {[...restaurants]
+                .sort((a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999") || (a.time ?? "").localeCompare(b.time ?? ""))
+                .map((r) => (
+                  <RestaurantCard key={r.id} r={r} days={days} />
+                ))}
+            </div>
+          )}
+        </div>
+        <aside className="space-y-4">
+          <div className="card space-y-3 p-5">
+            <div>
+              <p className="eyebrow">Neu</p>
+              <h3 className="font-display text-xl">Restaurant merken</h3>
+            </div>
+            <ActivityImport stopId={stop.id} days={dayOptions} category="restaurant" />
+          </div>
+          <form action={createActivity} className="card space-y-4 p-5">
+            <p className="eyebrow">…oder selbst eintragen</p>
+            <input type="hidden" name="stop_id" value={stop.id} />
+            <input type="hidden" name="category" value="restaurant" />
+            <RestaurantFields days={days} />
             <SubmitButton className="btn-primary w-full">Hinzufügen</SubmitButton>
           </form>
         </aside>
@@ -648,5 +690,133 @@ function ActivityCard({ a, days }: { a: Activity; days: string[] }) {
         </div>
       </div>
     </div>
+  );
+}
+
+const PRICE_LEVELS = ["€", "€€", "€€€", "€€€€"];
+
+function RestaurantFields({ r, days }: { r?: Activity; days: string[] }) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <div className="col-span-2">
+        <label className="label">Name</label>
+        <input name="title" required defaultValue={r?.title} placeholder="z. B. Joe Beef" className="input" />
+      </div>
+      <div>
+        <label className="label">Küche</label>
+        <input name="cuisine" defaultValue={r?.cuisine ?? ""} placeholder="Französisch, Bistro …" className="input" />
+      </div>
+      <div>
+        <label className="label">Preisniveau</label>
+        <select name="price_level" defaultValue={r?.price_level ?? ""} className="input">
+          <option value="">–</option>
+          {PRICE_LEVELS.map((p) => (
+            <option key={p} value={p}>{p}</option>
+          ))}
+        </select>
+      </div>
+      <div className="col-span-2">
+        <label className="label">Adresse</label>
+        <input name="address" defaultValue={r?.address ?? ""} placeholder="2491 Rue Notre-Dame O, Montréal" className="input" />
+      </div>
+      <div>
+        <label className="label">Tag (Reservierung)</label>
+        {days.length > 0 ? (
+          <select name="date" defaultValue={r?.date ?? ""} className="input">
+            <option value="">Offen</option>
+            {days.map((d) => (
+              <option key={d} value={d}>{fmtDate(d)}</option>
+            ))}
+          </select>
+        ) : (
+          <input type="date" name="date" defaultValue={r?.date ?? ""} className="input" />
+        )}
+      </div>
+      <div>
+        <label className="label">Uhrzeit</label>
+        <input type="time" name="time" defaultValue={r?.time ?? ""} className="input" />
+      </div>
+      <div className="col-span-2">
+        <label className="label">Link</label>
+        <input name="link" type="url" defaultValue={r?.link ?? ""} placeholder="https://…" className="input" />
+      </div>
+      <div className="col-span-2">
+        <label className="label">Notiz</label>
+        <textarea name="description" rows={2} defaultValue={r?.description ?? ""} placeholder="Empfehlung, Gericht probieren …" className="input" />
+      </div>
+      <input type="hidden" name="cost" value={r?.cost ?? ""} />
+      <label className="col-span-2 flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="reserved" defaultChecked={r?.reserved ?? false} className="h-4 w-4 accent-[#2e6553]" />
+        Tisch reserviert
+      </label>
+    </div>
+  );
+}
+
+function RestaurantCard({ r, days }: { r: Activity; days: string[] }) {
+  const ratingTxt = r.rating != null ? r.rating.toFixed(1).replace(".", ",") : null;
+  const maps = `https://www.google.com/maps/search/${encodeURIComponent([r.title, r.address].filter(Boolean).join(", "))}`;
+  return (
+    <article className={`card card-hover group flex flex-col overflow-hidden ${r.done ? "opacity-55" : ""}`}>
+      <div className="relative aspect-[16/9] bg-sand-deep">
+        <div className="absolute inset-0 grid place-items-center text-4xl text-slate-300">🍽</div>
+        {r.image && <CoverImg src={r.image} className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-105" />}
+        <div className="absolute inset-x-0 top-0 flex justify-between gap-2 p-3">
+          {r.reserved ? (
+            <span className="chip bg-sky-700 text-white">✓ Reserviert</span>
+          ) : (
+            <span className="chip bg-paper/90 text-slate-600">Gemerkt</span>
+          )}
+          {ratingTxt && (
+            <span className="chip bg-paper/95 text-ink">
+              ★ {ratingTxt}
+              {r.review_count != null && <span className="text-slate-500">· {r.review_count.toLocaleString("de-DE")}</span>}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-1 flex-col p-4">
+        <div className="flex items-start justify-between gap-2">
+          <h4 className={`font-display text-xl leading-snug ${r.done ? "line-through" : ""}`}>{r.title}</h4>
+          {r.price_level && <span className="shrink-0 text-sm font-medium tracking-wider text-slate-500">{r.price_level}</span>}
+        </div>
+        {r.cuisine && <p className="text-sm text-slate-500">{r.cuisine}</p>}
+        {(r.date || r.time) && (
+          <p className="mt-2 inline-flex w-fit items-center gap-1.5 rounded-full bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-800">
+            🕖 {r.date ? fmtDate(r.date) : ""}
+            {r.time ? ` · ${r.time.slice(0, 5)} Uhr` : ""}
+          </p>
+        )}
+        {r.description && <p className="font-display mt-2 line-clamp-3 text-sm text-slate-600 italic">{r.description}</p>}
+        <div className="mt-auto flex flex-wrap items-center gap-3 pt-3 text-xs">
+          <a href={maps} target="_blank" rel="noopener noreferrer" className="font-medium text-sky-700 hover:underline">
+            📍 {r.address ? r.address.split(",")[0] : "Karte"} ↗
+          </a>
+          {r.link && (
+            <a href={r.link} target="_blank" rel="noopener noreferrer" className="font-medium text-sky-700 hover:underline">
+              {r.source && sourceLabel(r.source) !== r.source ? sourceLabel(r.source) : "Website"} ↗
+            </a>
+          )}
+        </div>
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs text-slate-400 hover:text-slate-600">Bearbeiten</summary>
+          <form action={updateActivity} className="mt-2 space-y-2">
+            <input type="hidden" name="id" value={r.id} />
+            <RestaurantFields r={r} days={days} />
+            <SubmitButton className="btn-primary">Speichern</SubmitButton>
+          </form>
+          <div className="mt-2 flex justify-between">
+            <form action={toggleActivity}>
+              <input type="hidden" name="id" value={r.id} />
+              <button className="btn-ghost px-2 py-1 text-xs">{r.done ? "Nicht besucht" : "✓ Besucht"}</button>
+            </form>
+            <form action={deleteActivity}>
+              <input type="hidden" name="id" value={r.id} />
+              <ConfirmButton className="btn-danger px-2 py-1 text-xs" message="Restaurant löschen?">Löschen</ConfirmButton>
+            </form>
+          </div>
+        </details>
+      </div>
+    </article>
   );
 }

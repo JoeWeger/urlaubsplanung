@@ -101,6 +101,18 @@ export function sourceLabel(s?: string | null): string {
       return "Musement";
     case "civitatis":
       return "Civitatis";
+    case "thefork":
+      return "TheFork";
+    case "opentable":
+      return "OpenTable";
+    case "yelp":
+      return "Yelp";
+    case "resy":
+      return "Resy";
+    case "quandoo":
+      return "Quandoo";
+    case "michelin":
+      return "Guide Michelin";
     default:
       return s ? s : "Link";
   }

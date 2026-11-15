@@ -259,7 +259,7 @@ export type ImportPreview = {
   existing: { id: number; stop_id: number; name: string | null; stop: string }[];
   outdated: boolean;
   debug: string;
-  kind: "hotel" | "activity";
+  kind: "hotel" | "activity" | "restaurant";
 };
 
 const pathKey = (u: string) => {
@@ -307,9 +307,9 @@ export async function saveImport(f: FormData) {
   const html = String(f.get("html") ?? "");
   if (!url) return;
   const d = await listingFromHtml(url, html.slice(0, 500_000));
-  if (f.get("kind") === "activity") {
+  if (f.get("kind") === "activity" || f.get("kind") === "restaurant") {
     const stopId = id(f, "stop_id");
-    await insertActivity(stopId, d, s(f, "date"), s(f, "time"));
+    await insertActivity(stopId, d, s(f, "date"), s(f, "time"), f.get("kind") === "restaurant" ? "restaurant" : "activity");
     const trip = (await query<{ trip_id: number }>("SELECT trip_id FROM stops WHERE id=$1", [stopId]))[0];
     refresh();
     redirect(trip ? `/trips/${trip.trip_id}/stops/${stopId}` : "/");
@@ -373,13 +373,19 @@ export async function deleteHotel(f: FormData) {
 }
 
 /* ---------- Activities ---------- */
-async function insertActivity(stopId: number, d: ScrapedListing, date: string | null, time: string | null) {
-  // Preis bei Touren meist "ab X € pro Person"
-  const cost = d.price_total ?? d.price_per_night ?? null;
+async function insertActivity(
+  stopId: number,
+  d: ScrapedListing,
+  date: string | null,
+  time: string | null,
+  category: "activity" | "restaurant" = "activity",
+) {
+  // Preis bei Touren meist "ab X € pro Person"; bei Restaurants kein Preis übernehmen
+  const cost = category === "restaurant" ? null : (d.price_total ?? d.price_per_night ?? null);
   await query(
-    `INSERT INTO activities (stop_id, title, date, time, description, link, cost, image, rating, rating_scale, review_count, source, duration)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-    [stopId, d.name ?? new URL(d.url).hostname, date, time, d.description, d.url, cost, d.image, d.rating, d.rating_scale, d.review_count, d.source, d.duration ?? null],
+    `INSERT INTO activities (stop_id, title, date, time, description, link, cost, image, rating, rating_scale, review_count, source, duration, category, cuisine, price_level, address)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+    [stopId, d.name ?? new URL(d.url).hostname, date, time, d.description, d.url, cost, d.image, d.rating, d.rating_scale, d.review_count, d.source, d.duration ?? null, category, d.cuisine ?? null, d.price_level ?? null, d.address],
   );
 }
 
@@ -394,9 +400,10 @@ export async function importActivity(_: ImportState, f: FormData): Promise<Impor
     return { error: "Das ist kein gültiger Link." };
   }
   const d = await scrapeListing(url.toString());
-  await insertActivity(stopId, d, s(f, "date"), s(f, "time"));
+  const category = f.get("category") === "restaurant" ? "restaurant" : "activity";
+  await insertActivity(stopId, d, s(f, "date"), s(f, "time"), category);
   refresh();
-  const miss = [d.name ? null : "Titel", d.image ? null : "Foto", d.rating != null ? null : "Bewertung", d.price_per_night ?? d.price_total ? null : "Preis"].filter(Boolean);
+  const miss = [d.name ? null : "Titel", d.image ? null : "Foto", d.rating != null ? null : "Bewertung", category === "restaurant" || (d.price_per_night ?? d.price_total) ? null : "Preis"].filter(Boolean);
   return {
     ok: true,
     warning: miss.length ? `${miss.join(", ")} nicht gefunden – über „Bearbeiten“ ergänzen oder das Lesezeichen „➕ Urlaubsplanung“ auf der Seite nutzen.` : undefined,
@@ -415,25 +422,29 @@ export async function refreshActivity(f: FormData) {
   refresh();
 }
 const activityFields = (f: FormData) => [
-  s(f, "title") ?? "Aktivität",
+  s(f, "title") ?? (f.get("category") === "restaurant" ? "Restaurant" : "Aktivität"),
   s(f, "date"),
   s(f, "time"),
   s(f, "description"),
   s(f, "link"),
   n(f, "cost"),
+  s(f, "cuisine"),
+  s(f, "price_level"),
+  s(f, "address"),
+  f.get("reserved") === "on",
 ];
 
 export async function createActivity(f: FormData) {
   await query(
-    "INSERT INTO activities (stop_id, title, date, time, description, link, cost) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-    [id(f, "stop_id"), ...activityFields(f)],
+    "INSERT INTO activities (stop_id, title, date, time, description, link, cost, cuisine, price_level, address, reserved, category) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+    [id(f, "stop_id"), ...activityFields(f), f.get("category") === "restaurant" ? "restaurant" : "activity"],
   );
   refresh();
 }
 
 export async function updateActivity(f: FormData) {
   await query(
-    "UPDATE activities SET title=$2, date=$3, time=$4, description=$5, link=$6, cost=$7 WHERE id=$1",
+    "UPDATE activities SET title=$2, date=$3, time=$4, description=$5, link=$6, cost=$7, cuisine=$8, price_level=$9, address=$10, reserved=$11 WHERE id=$1",
     [id(f), ...activityFields(f)],
   );
   refresh();

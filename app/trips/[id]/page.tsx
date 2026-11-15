@@ -130,7 +130,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
       .filter((a) => a.date)
       .map<CalEvent>((a) => ({
         start: a.date!,
-        label: `${a.time ? a.time.slice(0, 5) + " " : ""}${a.title}`,
+        label: `${a.category === "restaurant" ? "🍽 " : ""}${a.time ? a.time.slice(0, 5) + " " : ""}${a.title}`,
         color: "#2e6553",
         href: `/trips/${tripId}/stops/${a.stop_id}`,
         kind: "activity",
@@ -263,7 +263,12 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
                         ) : (
                           <span className="chip bg-clay/10 text-clay">Noch keine Unterkunft</span>
                         )}
-                        {acts.length > 0 && <span className="chip bg-slate-100 text-slate-600">{acts.length} geplant</span>}
+                        {acts.filter((a) => a.category !== "restaurant").length > 0 && (
+                          <span className="chip bg-slate-100 text-slate-600">{acts.filter((a) => a.category !== "restaurant").length} geplant</span>
+                        )}
+                        {acts.some((a) => a.category === "restaurant") && (
+                          <span className="chip bg-slate-100 text-slate-600">🍽 {acts.filter((a) => a.category === "restaurant").length}</span>
+                        )}
                       </div>
                     </div>
                     <span className="self-center pr-5 text-xl text-slate-300 transition group-hover:translate-x-1 group-hover:text-ink">→</span>

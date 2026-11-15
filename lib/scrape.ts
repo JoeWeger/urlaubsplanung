@@ -23,6 +23,8 @@ export type ScrapedListing = {
   orig_price: number | null;
   orig_currency: string | null;
   duration?: string | null;
+  cuisine?: string | null;
+  price_level?: string | null;
   fetched: boolean;
   warning?: string;
 };
@@ -42,6 +44,12 @@ export function detectSource(url: URL): string {
   if (h.includes("tiqets.")) return "tiqets";
   if (h.includes("musement.")) return "musement";
   if (h.includes("civitatis.")) return "civitatis";
+  if (h.includes("thefork.") || h.includes("lafourchette.")) return "thefork";
+  if (h.includes("opentable.")) return "opentable";
+  if (h.includes("yelp.")) return "yelp";
+  if (h.includes("resy.")) return "resy";
+  if (h.includes("quandoo.")) return "quandoo";
+  if (h.includes("michelin.")) return "michelin";
   return h.replace(/^www\./, "");
 }
 
@@ -53,7 +61,7 @@ const HOTEL_SOURCES = ["booking", "expedia", "hotels", "agoda", "vrbo"];
  * Unterkunft oder Aktivität? Bekannte Portale direkt, sonst anhand der
  * strukturierten Daten (schema.org-Typ) und Stichwörtern. Im Zweifel: Aktivität.
  */
-export function guessKind(raw: string, html = ""): "hotel" | "activity" {
+export function guessKind(raw: string, html = ""): "hotel" | "activity" | "restaurant" {
   let u: URL;
   try {
     u = new URL(raw);
@@ -61,13 +69,18 @@ export function guessKind(raw: string, html = ""): "hotel" | "activity" {
     return "activity";
   }
   const src = detectSource(u);
+  if (["thefork", "opentable", "resy", "quandoo"].includes(src)) return "restaurant";
+  if (src === "tripadvisor" && /Restaurant_Review/i.test(u.pathname)) return "restaurant";
+  if (src === "michelin" && /\/restaurant\//i.test(u.pathname)) return "restaurant";
   if (isActivityUrl(raw)) return "activity";
   if (HOTEL_SOURCES.includes(src) || (src === "airbnb" && /\/rooms\//.test(u.pathname))) return "hotel";
   const types = Array.from(html.matchAll(/"@type"\s*:\s*\[?\s*"([A-Za-z]+)"/g)).map((m) => m[1]);
+  if (types.some((t) => /^(Restaurant|FoodEstablishment|CafeOrCoffeeShop|BarOrPub|Bakery|Brewery|Winery|IceCreamShop|FastFoodRestaurant)$/.test(t))) return "restaurant";
   if (types.some((t) => /^(Hotel|LodgingBusiness|Resort|Hostel|Motel|BedAndBreakfast|VacationRental|Campground|Apartment|House|Accommodation|LodgingReservation)$/.test(t))) return "hotel";
-  if (types.some((t) => /^(TouristTrip|TouristAttraction|Event|Restaurant|FoodEstablishment|Museum|Trip|Product|Park|LandmarksOrHistoricalBuildings)$/.test(t))) return "activity";
+  if (types.some((t) => /^(TouristTrip|TouristAttraction|Event|Museum|Trip|Product|Park|LandmarksOrHistoricalBuildings)$/.test(t))) return "activity";
   const title = meta(html, "og:title") ?? meta(html, "x-h1") ?? "";
   if (/\b(hotel|hostel|resort|motel|lodge|inn|auberge|apartments?|ferienwohnung|ferienhaus|unterkunft|chalet|cabin|b&b|guesthouse|pension)\b/i.test(`${u.hostname} ${u.pathname} ${title}`)) return "hotel";
+  if (src === "yelp" || /\b(restaurant|bistro|brasserie|trattoria|osteria|pizzeria|café|cafe|bar|pub|tavern|steakhouse|sushi|ramen|bakery|bäckerei|boulangerie|diner|eatery|gasthaus|wirtshaus)\b/i.test(`${u.hostname.replace(/[.-]/g, " ")} ${u.pathname.replace(/[/-]/g, " ")} ${title}`)) return "restaurant";
   return "activity";
 }
 
@@ -229,7 +242,7 @@ function nameFromUrl(url: URL, source: string): string | null {
     const m = url.pathname.match(/\/rooms\/(?:plus\/)?(\d+)/);
     if (m) return `Airbnb #${m[1]}`;
   }
-  if (ACTIVITY_SOURCES.includes(source)) {
+  if (ACTIVITY_SOURCES.includes(source) || ["thefork", "opentable", "yelp", "resy", "quandoo", "michelin"].includes(source)) {
     // z. B. /montreal-l1131/old-montreal-food-tour-t12345/ → "Old Montreal Food Tour"
     const seg = url.pathname.split("/").filter(Boolean).reverse().find((p) => /[a-z]-[a-z]/i.test(p) && !/^[a-z]{2}(-[a-z]{2})?$/i.test(p));
     if (seg) {
@@ -350,6 +363,13 @@ export function parseListingHtml(html: string, url: URL): Partial<ScrapedListing
   r.image =
     str(ld?.image) || str(ld?.photo) || meta(html, "og:image") || meta(html, "twitter:image") || meta(html, "x-img") || meta(html, "x-img2");
   r.address = addressStr(ld?.address) || meta(html, "x-address");
+
+  // Restaurants: Küche und Preisniveau
+  const cuisine = ld?.servesCuisine;
+  if (cuisine) r.cuisine = Array.isArray(cuisine) ? cuisine.map(String).join(", ") : String(cuisine);
+  if (typeof ld?.priceRange === "string" && /^[\s$€£¥-]+$/.test(ld.priceRange)) {
+    r.price_level = ld.priceRange.replace(/\$/g, "€").replace(/\s+/g, "");
+  }
 
   // Dauer (Touren/Aktivitäten), z. B. "Dauer: 3 Stunden" / "Duration 2.5 hours"
   const durText = meta(html, "x-text") ?? html.replace(/<[^>]+>/g, " ");

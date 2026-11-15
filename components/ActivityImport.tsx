@@ -3,13 +3,23 @@
 import { useActionState } from "react";
 import { importActivity, type ImportState } from "@/app/actions";
 
-export function ActivityImport({ stopId, days }: { stopId: number; days: { value: string; label: string }[] }) {
+export function ActivityImport({
+  stopId,
+  days,
+  category = "activity",
+}: {
+  stopId: number;
+  days: { value: string; label: string }[];
+  category?: "activity" | "restaurant";
+}) {
+  const isFood = category === "restaurant";
   const [state, action, pending] = useActionState<ImportState, FormData>(importActivity, null);
   return (
     <form action={action} className="space-y-2">
       <input type="hidden" name="stop_id" value={stopId} />
-      <label className="label">Per Link – GetYourGuide, Viator, Tripadvisor …</label>
-      <input name="url" required placeholder="https://www.getyourguide.de/…" className="input" />
+      <input type="hidden" name="category" value={category} />
+      <label className="label">{isFood ? "Per Link – TheFork, OpenTable, Tripadvisor, Website …" : "Per Link – GetYourGuide, Viator, Tripadvisor …"}</label>
+      <input name="url" required placeholder={isFood ? "https://www.thefork.de/restaurant/…" : "https://www.getyourguide.de/…"} className="input" />
       <div className="flex gap-2">
         {days.length > 0 && (
           <select name="date" defaultValue="" className="input flex-1">

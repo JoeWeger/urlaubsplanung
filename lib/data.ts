@@ -74,6 +74,11 @@ export type Activity = {
   review_count: number | null;
   source: string | null;
   duration: string | null;
+  category: "activity" | "restaurant" | string | null;
+  cuisine: string | null;
+  price_level: string | null;
+  address: string | null;
+  reserved: boolean | null;
 };
 
 export const getTrips = () =>

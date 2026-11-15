@@ -10,7 +10,7 @@ export function ImportClient() {
   const [data, setData] = useState<{ url: string; html: string } | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [kindOverride, setKindOverride] = useState<"hotel" | "activity" | null>(null);
+  const [kindOverride, setKindOverride] = useState<"hotel" | "activity" | "restaurant" | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.hash.slice(1));
@@ -39,18 +39,20 @@ export function ImportClient() {
 
   const l = preview.listing;
   const kind = kindOverride ?? preview.kind;
-  const isAct = kind === "activity";
+  const isFood = kind === "restaurant";
+  const isAct = kind === "activity" || isFood;
   const trips = Array.from(new Set(preview.stops.map((s) => s.trip)));
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <h1 className="font-display text-4xl font-light">{isAct ? "Aktivität übernehmen" : "Unterkunft übernehmen"}</h1>
+        <h1 className="font-display text-4xl font-light">{isFood ? "Restaurant übernehmen" : isAct ? "Aktivität übernehmen" : "Unterkunft übernehmen"}</h1>
         <div className="flex rounded-full border border-line bg-paper p-1 text-sm" role="radiogroup" aria-label="Art">
           {(
             [
               ["hotel", "🏨 Unterkunft"],
               ["activity", "📍 Aktivität"],
+              ["restaurant", "🍽 Restaurant"],
             ] as const
           ).map(([k, label]) => (
             <button
@@ -78,7 +80,7 @@ export function ImportClient() {
             // eslint-disable-next-line @next/next/no-img-element
             <img src={l.image} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
           ) : (
-            <div className="grid h-full min-h-32 place-items-center text-4xl text-slate-300">{isAct ? "📍" : "🏨"}</div>
+            <div className="grid h-full min-h-32 place-items-center text-4xl text-slate-300">{isFood ? "🍽" : isAct ? "📍" : "🏨"}</div>
           )}
         </div>
         <div className="flex-1 p-4">
@@ -86,10 +88,12 @@ export function ImportClient() {
           <h2 className="font-display mt-1 text-2xl">{l.name ?? "Unbekannte Unterkunft"}</h2>
           {l.address && <p className="text-xs text-slate-500">{l.address}</p>}
           <div className="mt-3 flex flex-wrap gap-4 text-sm">
+{!isFood && (
             <div>
               <div className="text-xs text-slate-400">Preis</div>
               <div className="font-semibold">{fmtMoney(l.price_total ?? l.price_per_night, l.currency)}{isAct ? (l.price_total ?? l.price_per_night) != null ? " p. P." : "" : l.price_total == null && l.price_per_night != null ? " / Nacht" : ""}</div>
             </div>
+            )}
             <div>
               <div className="text-xs text-slate-400">Bewertung</div>
               <div className="font-semibold">
@@ -98,11 +102,15 @@ export function ImportClient() {
               </div>
             </div>
             <div>
-              <div className="text-xs text-slate-400">{isAct ? "Dauer" : "Reisedaten"}</div>
-              <div className="font-semibold">{isAct ? l.duration ?? "–" : l.checkin ? fmtRange(l.checkin, l.checkout) : "–"}</div>
+              <div className="text-xs text-slate-400">{isFood ? "Küche" : isAct ? "Dauer" : "Reisedaten"}</div>
+              <div className="font-semibold">{isFood ? [l.cuisine, l.price_level].filter(Boolean).join(" · ") || "–" : isAct ? l.duration ?? "–" : l.checkin ? fmtRange(l.checkin, l.checkout) : "–"}</div>
             </div>
           </div>
-          {l.warning && <p className="mt-2 text-xs text-amber-600">{l.warning}</p>}
+          {(() => {
+            // Bei Restaurants ist kein Preis zu erwarten
+            const w = isFood ? l.warning?.replace(/^Preis(, | & )?/, "").replace(/^ nicht gefunden.*/, "") : l.warning;
+            return w && !/^\s*nicht gefunden/.test(w) ? <p className="mt-2 text-xs text-amber-600">{isFood ? w.charAt(0).toUpperCase() + w.slice(1) : w}</p> : null;
+          })()}
           {l.rating == null && l.source === "airbnb" && /★\s?(Neu|New)/i.test(preview.debug) && (
             <p className="mt-1 text-xs text-slate-500">Diese Unterkunft ist neu und hat noch keine Bewertungen.</p>
           )}
@@ -142,7 +150,7 @@ export function ImportClient() {
       )}
 
       <form action={saveImport} className="card space-y-3 p-4">
-        {isAct && <input type="hidden" name="kind" value="activity" />}
+        {isAct && <input type="hidden" name="kind" value={kind} />}
         <input type="hidden" name="url" value={data.url} />
         <input type="hidden" name="html" value={data.html} />
         <h3 className="font-display text-xl">{!isAct && preview.existing.length ? "…oder neu hinzufügen zu" : "Zu welchem Stopp hinzufügen?"}</h3>
