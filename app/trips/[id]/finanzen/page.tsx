@@ -14,6 +14,7 @@ import {
 import { fmtMoneyExact as fmtMoney, fmtRange, fmtShort, nightsBetween, toISODate, tripColor } from "@/lib/format";
 import { PaymentControls } from "@/components/PaymentControls";
 import { ConfirmButton, SubmitButton } from "@/components/ui";
+import { PAYMENT_METHODS, effectiveMethod, methodInfo } from "@/lib/payment-methods";
 
 export const dynamic = "force-dynamic";
 
@@ -124,7 +125,14 @@ export default async function FinanzenPage({ params }: { params: Promise<{ id: s
   const amountOf = (it: Item) => it.payment?.amount ?? it.defaultAmount ?? 0;
   const isShared = (it: Item) => it.payment?.shared ?? true;
   const total = items.reduce((a, it) => a + amountOf(it), 0);
-  const paid = items.filter((it) => it.payment?.paid).reduce((a, it) => a + amountOf(it), 0);
+  const methodOf = (it: Item) => effectiveMethod(it.payment?.payment_method, it.payment?.paid);
+  const byMethod = new Map<string, number>();
+  for (const it of items) byMethod.set(methodOf(it), (byMethod.get(methodOf(it)) ?? 0) + amountOf(it));
+  const paid = items.filter((it) => methodInfo(methodOf(it))?.paid).reduce((a, it) => a + amountOf(it), 0);
+  const breakdown = (paidOnes: boolean) =>
+    PAYMENT_METHODS.filter((m) => m.paid === paidOnes && (byMethod.get(m.value) ?? 0) > 0)
+      .map((m) => `${m.value === "other" ? "anders bezahlt" : m.short} ${fmtMoney(byMethod.get(m.value))}`)
+      .join(" · ");
   const partnerShare = items.filter(isShared).reduce((a, it) => a + amountOf(it) / 2, 0);
   const partnerPaid = items.filter((it) => isShared(it) && it.payment?.partner_paid).reduce((a, it) => a + amountOf(it) / 2, 0);
   const partnerOwes = partnerShare - partnerPaid;
@@ -173,7 +181,7 @@ export default async function FinanzenPage({ params }: { params: Promise<{ id: s
         <Summary
           label="Bezahlt"
           value={fmtMoney(paid)}
-          note={total - paid > 0 ? `noch offen: ${fmtMoney(total - paid)}` : "alles bezahlt ✓"}
+          note={[breakdown(true), total - paid > 0 ? `offen: ${breakdown(false)}` : "alles bezahlt ✓"].filter(Boolean).join("\n")}
           bar={total ? paid / total : 0}
         />
         <Summary label={`Anteil ${partner}`} value={fmtMoney(partnerShare)} note="die Hälfte aller geteilten Posten" />
@@ -246,6 +254,7 @@ export default async function FinanzenPage({ params }: { params: Promise<{ id: s
                         itemId={it.itemId}
                         paymentId={it.payment?.id ?? null}
                         paid={it.payment?.paid ?? false}
+                        method={it.payment?.payment_method ?? null}
                         partnerPaid={it.payment?.partner_paid ?? false}
                         shared={it.payment?.shared ?? true}
                         cancelUntil={it.payment?.cancel_until ?? null}
@@ -295,10 +304,17 @@ export default async function FinanzenPage({ params }: { params: Promise<{ id: s
               <input type="date" name="cancel_until" className="input" />
             </div>
           </div>
+          <div>
+            <label className="label">Zahlung</label>
+            <select name="payment_method" defaultValue="open" className="input">
+              {PAYMENT_METHODS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.icon} {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="flex flex-wrap gap-4 text-sm text-slate-700">
-            <label className="flex items-center gap-2">
-              <input type="checkbox" name="paid" className="h-4 w-4 accent-[#2e6553]" /> Schon bezahlt
-            </label>
             <label className="flex items-center gap-2">
               <input type="checkbox" name="mine_only" className="h-4 w-4 accent-[#2e6553]" /> Nur für mich (nicht teilen)
             </label>
@@ -363,7 +379,7 @@ function Summary({
           <div className="h-full rounded-full bg-sky-600" style={{ width: `${Math.min(100, bar * 100)}%` }} />
         </div>
       )}
-      {note && <div className="mt-1.5 text-xs text-slate-500">{note}</div>}
+      {note && <div className="mt-1.5 text-xs whitespace-pre-line text-slate-500">{note}</div>}
     </div>
   );
 }

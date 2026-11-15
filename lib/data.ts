@@ -201,6 +201,7 @@ export type Payment = {
   partner_paid: boolean;
   shared: boolean;
   note: string | null;
+  payment_method: string | null;
 };
 
 export const getPayments = (tripId: number) =>

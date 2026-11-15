@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { setPayment } from "@/app/actions";
+import { PAYMENT_METHODS, effectiveMethod, methodInfo } from "@/lib/payment-methods";
 
 type Props = {
   tripId: number;
@@ -9,6 +10,7 @@ type Props = {
   itemId: number | null;
   paymentId: number | null;
   paid: boolean;
+  method: string | null;
   partnerPaid: boolean;
   shared: boolean;
   cancelUntil: string | null;
@@ -23,7 +25,8 @@ const eur = (v: number) =>
 
 /** Bezahlt / Stornofrist / Anteil überwiesen – speichert jede Änderung sofort */
 export function PaymentControls(p: Props) {
-  const [paid, setPaid] = useState(p.paid);
+  const [method, setMethod] = useState<string>(effectiveMethod(p.method, p.paid));
+  const info = methodInfo(method);
   const [partnerPaid, setPartnerPaid] = useState(p.partnerPaid);
   const [shared, setShared] = useState(p.shared);
   const [cancelUntil, setCancelUntil] = useState(p.cancelUntil ?? "");
@@ -76,17 +79,36 @@ export function PaymentControls(p: Props) {
         <span className="text-slate-400">€</span>
       </label>
 
-      {/* Bezahlt */}
-      <button
-        type="button"
-        onClick={() => {
-          setPaid(!paid);
-          save({ paid: String(!paid) });
-        }}
-        className={`btn border px-3 py-1.5 text-xs ${paid ? "border-sky-700 bg-sky-700 text-white" : "border-line text-slate-600 hover:border-slate-400"}`}
+      {/* Zahlung: womit bzw. noch offen */}
+      <label
+        className={`relative flex cursor-pointer items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+          info?.paid
+            ? "border-sky-700 bg-sky-700 text-white"
+            : method === "onsite"
+              ? "border-amber-300 bg-amber-50 text-amber-800"
+              : "border-clay/40 bg-clay/5 text-clay"
+        }`}
+        title="Zahlung"
       >
-        {paid ? "✓ Bezahlt" : "Nicht bezahlt"}
-      </button>
+        <span>{info?.icon}</span>
+        <span>{info?.paid && method !== "other" ? `Bezahlt · ${info.short}` : info?.short}</span>
+        <span className="opacity-60">▾</span>
+        <select
+          value={method}
+          onChange={(e) => {
+            setMethod(e.currentTarget.value);
+            save({ payment_method: e.currentTarget.value });
+          }}
+          className="absolute inset-0 cursor-pointer opacity-0"
+          aria-label="Zahlung"
+        >
+          {PAYMENT_METHODS.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.icon} {m.label}
+            </option>
+          ))}
+        </select>
+      </label>
 
       {/* Anteil Partner:in */}
       {shared ? (

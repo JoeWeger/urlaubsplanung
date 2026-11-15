@@ -154,6 +154,7 @@ CREATE TABLE IF NOT EXISTS payments (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS payments_item_idx ON payments (item_type, item_id);
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_method TEXT;
 `;
 
 async function ensureSchema() {

@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { query } from "@/lib/db";
 import { guessKind, listingFromHtml, scrapeListing, type ScrapedListing } from "@/lib/scrape";
 import { authToken } from "@/lib/auth";
+import { methodInfo } from "@/lib/payment-methods";
 import { BOOKMARKLET_VERSION } from "@/lib/bookmarklet";
 
 const s = (f: FormData, k: string) => {
@@ -462,7 +463,7 @@ export async function deleteActivity(f: FormData) {
 
 /* ---------- Finanzen ---------- */
 const ITEM_TYPES = ["flight", "hotel", "car", "activity", "custom"];
-const PAYMENT_COLUMNS = ["paid", "partner_paid", "shared", "cancel_until", "amount", "note", "title"] as const;
+const PAYMENT_COLUMNS = ["paid", "partner_paid", "shared", "cancel_until", "amount", "note", "title", "payment_method"] as const;
 
 /** Zahlungsstatus eines Postens setzen (legt die Zeile bei Bedarf an) */
 export async function setPayment(f: FormData) {
@@ -478,6 +479,13 @@ export async function setPayment(f: FormData) {
   if (f.has("amount")) fields.amount = n(f, "amount");
   if (f.has("note")) fields.note = s(f, "note");
   if (f.has("title")) fields.title = s(f, "title");
+  if (f.has("payment_method")) {
+    const m = methodInfo(s(f, "payment_method"));
+    if (m) {
+      fields.payment_method = m.value;
+      fields.paid = m.paid; // Amex/Revolut/anders = bezahlt, sonst offen
+    }
+  }
   // Nur bekannte Spalten (Whitelist) – Spaltennamen kommen nie aus der Anfrage
   const keys = PAYMENT_COLUMNS.filter((k) => k in fields);
   if (!keys.length) return;
@@ -501,8 +509,16 @@ export async function setPayment(f: FormData) {
 
 export async function createExpense(f: FormData) {
   await query(
-    "INSERT INTO payments (trip_id, item_type, title, amount, paid, cancel_until, shared) VALUES ($1,'custom',$2,$3,$4,$5,$6)",
-    [id(f, "trip_id"), s(f, "title") ?? "Sonstiges", n(f, "amount"), f.get("paid") === "on", s(f, "cancel_until"), f.get("mine_only") !== "on"],
+    "INSERT INTO payments (trip_id, item_type, title, amount, paid, cancel_until, shared, payment_method) VALUES ($1,'custom',$2,$3,$4,$5,$6,$7)",
+    [
+      id(f, "trip_id"),
+      s(f, "title") ?? "Sonstiges",
+      n(f, "amount"),
+      methodInfo(s(f, "payment_method"))?.paid ?? false,
+      s(f, "cancel_until"),
+      f.get("mine_only") !== "on",
+      methodInfo(s(f, "payment_method"))?.value ?? "open",
+    ],
   );
   revalidatePath("/trips/" + id(f, "trip_id") + "/finanzen");
 }
