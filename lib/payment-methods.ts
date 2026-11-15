@@ -1,10 +1,14 @@
-/** Zahlungsarten – "paid" = zählt als bezahlt */
+/**
+ * Zahlungsarten – "paid" = zählt als bezahlt,
+ * "joint" = vom Gemeinschaftskonto: der Anteil der Mitreisenden ist damit automatisch beglichen
+ */
 export const PAYMENT_METHODS = [
-  { value: "open", label: "Muss noch bezahlt werden", short: "Noch zu zahlen", icon: "🔴", paid: false },
-  { value: "onsite", label: "Vor Ort bezahlen", short: "Vor Ort", icon: "📍", paid: false },
-  { value: "amex", label: "Amex", short: "Amex", icon: "💳", paid: true },
-  { value: "revolut", label: "Revolut", short: "Revolut", icon: "💳", paid: true },
-  { value: "other", label: "Anders bezahlt", short: "Bezahlt", icon: "✓", paid: true },
+  { value: "open", label: "Muss noch bezahlt werden", short: "Noch zu zahlen", icon: "🔴", paid: false, joint: false },
+  { value: "onsite", label: "Vor Ort bezahlen", short: "Vor Ort", icon: "📍", paid: false, joint: false },
+  { value: "amex", label: "Amex", short: "Amex", icon: "💳", paid: true, joint: false },
+  { value: "revolut", label: "Revolut", short: "Revolut", icon: "💳", paid: true, joint: false },
+  { value: "revolut_joint", label: "Revolut gemeinsam (Gemeinschaftskonto)", short: "Revolut gemeinsam", icon: "🤝", paid: true, joint: true },
+  { value: "other", label: "Anders bezahlt", short: "Bezahlt", icon: "✓", paid: true, joint: false },
 ] as const;
 
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number]["value"];

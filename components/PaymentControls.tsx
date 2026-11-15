@@ -92,7 +92,7 @@ export function PaymentControls(p: Props) {
         title="Zahlung"
       >
         <span className="truncate">
-          {info?.icon} {info?.paid && method !== "other" ? `Bezahlt · ${info.short}` : info?.short}
+          {info?.icon} {info?.paid && method !== "other" && !info.joint ? `Bezahlt · ${info.short}` : info?.short}
         </span>
         <span className="opacity-60">▾</span>
         <select
@@ -113,7 +113,16 @@ export function PaymentControls(p: Props) {
       </label>
 
       {/* Anteil Partner:in */}
-      {shared ? (
+      {shared && info?.joint ? (
+        <span
+          className="chip justify-between border border-sky-200 bg-sky-50 py-1.5 text-sky-800 lg:w-full"
+          title="Vom Gemeinschaftskonto bezahlt – nichts zu überweisen"
+        >
+          <span>
+            <span className="lg:hidden">{p.partnerName}: </span>🤝 Gemeinschaftskonto
+          </span>
+        </span>
+      ) : shared ? (
         <button
           type="button"
           onClick={() => {

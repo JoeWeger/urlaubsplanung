@@ -133,9 +133,20 @@ export default async function FinanzenPage({ params }: { params: Promise<{ id: s
     PAYMENT_METHODS.filter((m) => m.paid === paidOnes && (byMethod.get(m.value) ?? 0) > 0)
       .map((m) => `${m.value === "other" ? "anders bezahlt" : m.short} ${fmtMoney(byMethod.get(m.value))}`)
       .join(" · ");
+  const isJoint = (it: Item) => !!methodInfo(effectiveMethod(it.payment?.payment_method, it.payment?.paid))?.joint;
   const partnerShare = items.filter(isShared).reduce((a, it) => a + amountOf(it) / 2, 0);
-  const partnerPaid = items.filter((it) => isShared(it) && it.payment?.partner_paid).reduce((a, it) => a + amountOf(it) / 2, 0);
-  const partnerOwes = partnerShare - partnerPaid;
+  // Gemeinschaftskonto: Anteil automatisch beglichen; sonst zählt "hat überwiesen"
+  const jointCovered = items.filter((it) => isShared(it) && isJoint(it)).reduce((a, it) => a + amountOf(it) / 2, 0);
+  const partnerPaid = items
+    .filter((it) => isShared(it) && !isJoint(it) && it.payment?.partner_paid)
+    .reduce((a, it) => a + amountOf(it) / 2, 0);
+  const partnerOwes = partnerShare - partnerPaid - jointCovered;
+  const settledNote = [
+    partnerPaid > 0 ? `${fmtMoney(partnerPaid)} überwiesen` : null,
+    jointCovered > 0 ? `${fmtMoney(jointCovered)} über Gemeinschaftskonto` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const deadlines = items
     .filter((it) => it.payment?.cancel_until && it.payment.cancel_until >= today)
     .sort((a, b) => a.payment!.cancel_until!.localeCompare(b.payment!.cancel_until!));
@@ -188,7 +199,7 @@ export default async function FinanzenPage({ params }: { params: Promise<{ id: s
         <Summary
           label={`${partner} schuldet dir`}
           value={fmtMoney(Math.max(0, partnerOwes))}
-          note={partnerOwes > 0.005 ? `${fmtMoney(partnerPaid)} schon überwiesen` : "alles ausgeglichen ✓"}
+          note={partnerOwes > 0.005 ? settledNote || "noch nichts überwiesen" : "alles ausgeglichen ✓"}
           accent={partnerOwes > 0.005}
         />
       </section>
@@ -241,7 +252,9 @@ export default async function FinanzenPage({ params }: { params: Promise<{ id: s
           const list = items.filter((it) => it.type === g.type);
           if (!list.length) return null;
           const sum = list.reduce((a, it) => a + amountOf(it), 0);
-          const owes = list.filter((it) => isShared(it) && !it.payment?.partner_paid).reduce((a, it) => a + amountOf(it) / 2, 0);
+          const owes = list
+            .filter((it) => isShared(it) && !isJoint(it) && !it.payment?.partner_paid)
+            .reduce((a, it) => a + amountOf(it) / 2, 0);
           return (
             <div key={g.type}>
               <h2 className="h2 mb-3">{g.label}</h2>
@@ -302,7 +315,7 @@ export default async function FinanzenPage({ params }: { params: Promise<{ id: s
               <span className={`font-display text-xl tabular-nums ${partnerOwes > 0.005 ? "text-clay" : "text-sky-700"}`}>
                 {partnerOwes > 0.005 ? `${partner} schuldet dir ${fmtMoney(partnerOwes)}` : `${partner}: alles ausgeglichen ✓`}
               </span>
-              {partnerPaid > 0 && <span className="ml-2 text-xs text-slate-500">({fmtMoney(partnerPaid)} schon überwiesen)</span>}
+              {settledNote && <span className="ml-2 text-xs text-slate-500">({settledNote})</span>}
             </span>
           </div>
         )}
