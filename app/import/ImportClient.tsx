@@ -10,6 +10,7 @@ export function ImportClient() {
   const [data, setData] = useState<{ url: string; html: string } | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [kindOverride, setKindOverride] = useState<"hotel" | "activity" | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.hash.slice(1));
@@ -37,12 +38,34 @@ export function ImportClient() {
   if (!preview || !data) return <div className="card mx-auto max-w-xl p-6 text-sm text-slate-500">Lese Unterkunft aus …</div>;
 
   const l = preview.listing;
-  const isAct = preview.kind === "activity";
+  const kind = kindOverride ?? preview.kind;
+  const isAct = kind === "activity";
   const trips = Array.from(new Set(preview.stops.map((s) => s.trip)));
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <h1 className="font-display text-4xl font-light">{isAct ? "Aktivität übernehmen" : "Unterkunft übernehmen"}</h1>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h1 className="font-display text-4xl font-light">{isAct ? "Aktivität übernehmen" : "Unterkunft übernehmen"}</h1>
+        <div className="flex rounded-full border border-line bg-paper p-1 text-sm" role="radiogroup" aria-label="Art">
+          {(
+            [
+              ["hotel", "🏨 Unterkunft"],
+              ["activity", "📍 Aktivität"],
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              role="radio"
+              aria-checked={kind === k}
+              onClick={() => setKindOverride(k)}
+              className={`cursor-pointer rounded-full px-3.5 py-1.5 transition ${kind === k ? "bg-ink text-paper" : "text-slate-600 hover:text-ink"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       {preview.outdated && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
           Dein Lesezeichen ist eine ältere Version und liest weniger aus. Bitte altes Lesezeichen löschen und{" "}
@@ -55,7 +78,7 @@ export function ImportClient() {
             // eslint-disable-next-line @next/next/no-img-element
             <img src={l.image} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
           ) : (
-            <div className="grid h-full min-h-32 place-items-center text-4xl text-slate-300">🏨</div>
+            <div className="grid h-full min-h-32 place-items-center text-4xl text-slate-300">{isAct ? "📍" : "🏨"}</div>
           )}
         </div>
         <div className="flex-1 p-4">
@@ -100,7 +123,7 @@ export function ImportClient() {
         </details>
       )}
 
-      {preview.existing.length > 0 && (
+      {!isAct && preview.existing.length > 0 && (
         <div className="card p-4">
           <h3 className="font-display text-xl">Schon in deiner Liste – aktualisieren?</h3>
           <div className="mt-2 space-y-2">
@@ -122,7 +145,7 @@ export function ImportClient() {
         {isAct && <input type="hidden" name="kind" value="activity" />}
         <input type="hidden" name="url" value={data.url} />
         <input type="hidden" name="html" value={data.html} />
-        <h3 className="font-display text-xl">{preview.existing.length ? "…oder neu hinzufügen zu" : "Zu welchem Stopp hinzufügen?"}</h3>
+        <h3 className="font-display text-xl">{!isAct && preview.existing.length ? "…oder neu hinzufügen zu" : "Zu welchem Stopp hinzufügen?"}</h3>
         {preview.stops.length === 0 ? (
           <p className="text-sm text-slate-500">Lege zuerst einen Urlaub mit Stopps an.</p>
         ) : (

@@ -47,6 +47,30 @@ export function detectSource(url: URL): string {
 
 const ACTIVITY_SOURCES = ["getyourguide", "viator", "tripadvisor", "klook", "tiqets", "musement", "civitatis"];
 
+const HOTEL_SOURCES = ["booking", "expedia", "hotels", "agoda", "vrbo"];
+
+/**
+ * Unterkunft oder Aktivität? Bekannte Portale direkt, sonst anhand der
+ * strukturierten Daten (schema.org-Typ) und Stichwörtern. Im Zweifel: Aktivität.
+ */
+export function guessKind(raw: string, html = ""): "hotel" | "activity" {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return "activity";
+  }
+  const src = detectSource(u);
+  if (isActivityUrl(raw)) return "activity";
+  if (HOTEL_SOURCES.includes(src) || (src === "airbnb" && /\/rooms\//.test(u.pathname))) return "hotel";
+  const types = Array.from(html.matchAll(/"@type"\s*:\s*\[?\s*"([A-Za-z]+)"/g)).map((m) => m[1]);
+  if (types.some((t) => /^(Hotel|LodgingBusiness|Resort|Hostel|Motel|BedAndBreakfast|VacationRental|Campground|Apartment|House|Accommodation|LodgingReservation)$/.test(t))) return "hotel";
+  if (types.some((t) => /^(TouristTrip|TouristAttraction|Event|Restaurant|FoodEstablishment|Museum|Trip|Product|Park|LandmarksOrHistoricalBuildings)$/.test(t))) return "activity";
+  const title = meta(html, "og:title") ?? meta(html, "x-h1") ?? "";
+  if (/\b(hotel|hostel|resort|motel|lodge|inn|auberge|apartments?|ferienwohnung|ferienhaus|unterkunft|chalet|cabin|b&b|guesthouse|pension)\b/i.test(`${u.hostname} ${u.pathname} ${title}`)) return "hotel";
+  return "activity";
+}
+
 /** Link zeigt auf eine Aktivität/Tour statt auf eine Unterkunft? */
 export function isActivityUrl(raw: string): boolean {
   try {

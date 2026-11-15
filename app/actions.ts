@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { query } from "@/lib/db";
-import { isActivityUrl, listingFromHtml, scrapeListing, type ScrapedListing } from "@/lib/scrape";
+import { guessKind, listingFromHtml, scrapeListing, type ScrapedListing } from "@/lib/scrape";
 import { authToken } from "@/lib/auth";
 import { BOOKMARKLET_VERSION } from "@/lib/bookmarklet";
 
@@ -298,8 +298,8 @@ export async function previewImport(url: string, html: string): Promise<ImportPr
     `Preisbereich: ${metaVal("x-price") || "–"}`,
     `Seitentext:\n${metaVal("x-text").slice(0, 5000) || "–"}`,
   ].join("\n\n");
-  const kind = isActivityUrl(listing.url) ? "activity" : "hotel";
-  return { listing, stops, suggestedStop: suggested, existing: kind === "hotel" ? existing : [], outdated, debug, kind };
+  const kind = guessKind(listing.url, html);
+  return { listing, stops, suggestedStop: suggested, existing, outdated, debug, kind };
 }
 
 export async function saveImport(f: FormData) {
