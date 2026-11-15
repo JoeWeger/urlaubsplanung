@@ -7,7 +7,7 @@ export type CalEvent = {
   label: string;
   color: string;
   href?: string;
-  kind?: "trip" | "stop" | "flight" | "activity" | "gap";
+  kind?: "trip" | "stop" | "flight" | "activity" | "gap" | "car";
 };
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -71,7 +71,7 @@ export function Month({
               <div className="flex flex-col gap-0.5">
                 {evs.slice(0, compact ? 3 : 5).map((e, j) => {
                   const isStart = e.start === day;
-                  const icon = e.kind === "flight" ? "✈ " : e.kind === "activity" ? "• " : e.kind === "gap" && isStart ? "⚠ " : "";
+                  const icon = e.kind === "car" ? "🚗 " : e.kind === "flight" ? "✈ " : e.kind === "activity" ? "• " : e.kind === "gap" && isStart ? "⚠ " : "";
                   const body = (
                     <div
                       title={e.label}
@@ -88,7 +88,7 @@ export function Month({
                       }}
                     >
                       {icon}
-                      {isStart || dayNum === 1 || i % 7 === 0 || e.kind === "activity" || e.kind === "flight"
+                      {isStart || dayNum === 1 || i % 7 === 0 || e.kind === "activity" || e.kind === "flight" || e.kind === "car"
                         ? e.label
                         : " "}
                     </div>

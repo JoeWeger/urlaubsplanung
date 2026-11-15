@@ -98,6 +98,23 @@ CREATE TABLE IF NOT EXISTS flight_files (
   data BYTEA NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS cars (
+  id SERIAL PRIMARY KEY,
+  trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  company TEXT,
+  car_type TEXT,
+  pickup_place TEXT,
+  pickup_at TEXT,
+  dropoff_place TEXT,
+  dropoff_at TEXT,
+  booking_ref TEXT,
+  price DOUBLE PRECISION,
+  link TEXT,
+  notes TEXT,
+  booked BOOLEAN DEFAULT false
+);
+ALTER TABLE flight_files ALTER COLUMN flight_id DROP NOT NULL;
+ALTER TABLE flight_files ADD COLUMN IF NOT EXISTS car_id INTEGER REFERENCES cars(id) ON DELETE CASCADE;
 CREATE TABLE IF NOT EXISTS activities (
   id SERIAL PRIMARY KEY,
   stop_id INTEGER NOT NULL REFERENCES stops(id) ON DELETE CASCADE,

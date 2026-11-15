@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
+  createCar,
   createFlight,
+  deleteCar,
+  updateCar,
+  uploadCarFiles,
   createStop,
   deleteFlight,
   deleteFlightFile,
@@ -12,12 +16,15 @@ import {
 } from "@/app/actions";
 import {
   getActivitiesForTrip,
+  getCarFiles,
+  getCars,
   getFlightFiles,
   getFlights,
   getHotelsForTrip,
   getStopCovers,
   getStops,
   getTrip,
+  type Car,
   type Flight,
   type FlightFile,
   type Hotel,
@@ -35,13 +42,15 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   const tripId = Number((await params).id);
   const trip = await getTrip(tripId);
   if (!trip) notFound();
-  const [stops, flights, hotels, activities, files, stopCovers] = await Promise.all([
+  const [stops, flights, hotels, activities, files, stopCovers, cars, carFiles] = await Promise.all([
     getStops(tripId),
     getFlights(tripId),
     getHotelsForTrip(tripId),
     getActivitiesForTrip(tripId),
     getFlightFiles(tripId),
     getStopCovers(tripId),
+    getCars(tripId),
+    getCarFiles(tripId),
   ]);
   const gaps = findGaps(trip.start_date, trip.end_date, stops);
   const openNights = gaps.reduce((a, g) => a + g.nights, 0);
@@ -79,7 +88,8 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   const favCost = chosen.filter((c) => !c.booked).reduce((a, c) => a + (c.price ?? 0), 0);
   const hotelCost = bookedCost + favCost;
   const actCost = activities.reduce((a, x) => a + (x.cost ?? 0), 0);
-  const total = flightCost + hotelCost + actCost;
+  const carCost = cars.reduce((a, c) => a + (c.price ?? 0), 0);
+  const total = flightCost + hotelCost + actCost + carCost;
 
   // Kalender
   const events: CalEvent[] = [
@@ -101,6 +111,14 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
         color: "#463f37",
         kind: "flight",
       })),
+    ...cars.flatMap<CalEvent>((c) => [
+      ...(c.pickup_at
+        ? [{ start: c.pickup_at.slice(0, 10), label: `Abholung ${time(c.pickup_at)}${c.pickup_place ? " " + c.pickup_place : ""}`, color: "#463f37", kind: "car" as const }]
+        : []),
+      ...(c.dropoff_at
+        ? [{ start: c.dropoff_at.slice(0, 10), label: `Rückgabe ${time(c.dropoff_at)}${c.dropoff_place ? " " + c.dropoff_place : ""}`, color: "#463f37", kind: "car" as const }]
+        : []),
+    ]),
     ...gaps.map<CalEvent>((g) => ({
       start: g.start,
       end: addDays(g.end, -1),
@@ -150,7 +168,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
         </Cover>
 
         {/* Kennzahlen */}
-        <div className="card relative z-10 mx-3 -mt-8 grid grid-cols-2 divide-line sm:mx-8 sm:grid-cols-4 sm:divide-x">
+        <div className="card relative z-10 mx-3 -mt-8 grid grid-cols-2 divide-line sm:mx-8 sm:grid-cols-3 lg:grid-cols-5 lg:divide-x">
           <Stat label="Gesamtbudget" value={fmtMoney(total)} strong note={favCost > 0 ? "inkl. Favoriten" : undefined} />
           <Stat label="Flüge" value={fmtMoney(flightCost)} />
           <Stat
@@ -158,6 +176,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
             value={fmtMoney(hotelCost)}
             note={favCost > 0 ? `${fmtMoney(bookedCost)} gebucht · ${fmtMoney(favCost)} Favoriten` : bookedCost > 0 ? "alles gebucht" : undefined}
           />
+          <Stat label="Mietwagen" value={fmtMoney(carCost)} note={cars.some((c) => !c.booked && c.price != null) ? "noch nicht alles gebucht" : undefined} />
           <Stat label="Aktivitäten" value={fmtMoney(actCost)} />
         </div>
 
@@ -302,6 +321,28 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
                 <input type="hidden" name="trip_id" value={trip.id} />
                 <FlightFields />
                 <SubmitButton className="btn-primary mt-4 w-full">Flug speichern</SubmitButton>
+              </form>
+            </details>
+          </div>
+
+          <p className="eyebrow mt-10">Auf der Straße</p>
+          <h2 className="h2 mb-5">Mietwagen</h2>
+          <div className="space-y-4">
+            {cars.length === 0 && (
+              <div className="card p-6 text-center text-sm text-slate-500">Noch kein Mietwagen eingetragen.</div>
+            )}
+            {cars.map((c) => (
+              <CarCard key={c.id} c={c} files={carFiles.filter((x) => x.car_id === c.id)} />
+            ))}
+            <details className="card group">
+              <summary className="flex cursor-pointer items-center gap-3 p-4 text-sm font-medium text-slate-600 hover:text-ink">
+                <span className="grid h-7 w-7 place-items-center rounded-full bg-sand-deep text-base transition group-open:rotate-45">+</span>
+                Mietwagen hinzufügen
+              </summary>
+              <form action={createCar} className="border-t border-line p-4">
+                <input type="hidden" name="trip_id" value={trip.id} />
+                <CarFields defaults={{ pickup_at: trip.start_date ? `${trip.start_date}T12:00` : "", dropoff_at: trip.end_date ? `${trip.end_date}T10:00` : "" }} />
+                <SubmitButton className="btn-primary mt-4 w-full">Mietwagen speichern</SubmitButton>
               </form>
             </details>
           </div>
@@ -516,5 +557,161 @@ function GapCard({ gap, tripId }: { gap: Gap; tripId: number }) {
         </form>
       </details>
     </li>
+  );
+}
+
+function CarFields({ c, defaults }: { c?: Car; defaults?: { pickup_at?: string; dropoff_at?: string } }) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <div>
+        <label className="label">Anbieter</label>
+        <input name="company" defaultValue={c?.company ?? ""} placeholder="Hertz, Sixt …" className="input" />
+      </div>
+      <div>
+        <label className="label">Fahrzeug / Klasse</label>
+        <input name="car_type" defaultValue={c?.car_type ?? ""} placeholder="SUV, Toyota RAV4" className="input" />
+      </div>
+      <div>
+        <label className="label">Abholung – Ort</label>
+        <input name="pickup_place" defaultValue={c?.pickup_place ?? ""} placeholder="Flughafen YUL" className="input" />
+      </div>
+      <div>
+        <label className="label">Abholung – Zeit</label>
+        <input type="datetime-local" name="pickup_at" defaultValue={c?.pickup_at ?? defaults?.pickup_at ?? ""} className="input" />
+      </div>
+      <div>
+        <label className="label">Rückgabe – Ort</label>
+        <input name="dropoff_place" defaultValue={c?.dropoff_place ?? ""} placeholder="Flughafen YYZ" className="input" />
+      </div>
+      <div>
+        <label className="label">Rückgabe – Zeit</label>
+        <input type="datetime-local" name="dropoff_at" defaultValue={c?.dropoff_at ?? defaults?.dropoff_at ?? ""} className="input" />
+      </div>
+      <div>
+        <label className="label">Buchungscode</label>
+        <input name="booking_ref" defaultValue={c?.booking_ref ?? ""} className="input" />
+      </div>
+      <div>
+        <label className="label">Gesamtpreis (€)</label>
+        <input name="price" inputMode="decimal" defaultValue={c?.price ?? ""} className="input" />
+      </div>
+      <div className="col-span-2">
+        <label className="label">Link</label>
+        <input name="link" type="url" defaultValue={c?.link ?? ""} placeholder="https://…" className="input" />
+      </div>
+      <div className="col-span-2">
+        <label className="label">Notizen</label>
+        <input name="notes" defaultValue={c?.notes ?? ""} placeholder="Versicherung, Einwegmiete, Zusatzfahrer …" className="input" />
+      </div>
+      <label className="col-span-2 flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="booked" defaultChecked={c?.booked ?? false} className="h-4 w-4 accent-[#2e6553]" />
+        Schon gebucht
+      </label>
+      <div className="col-span-2">
+        <label className="label">{c ? "Weitere Dokumente (PDF/Bild, max. 4 MB)" : "Buchungsbestätigung (PDF/Bild, max. 4 MB)"}</label>
+        <input type="file" name="files" accept="application/pdf,image/*" multiple className="input file:mr-3 file:rounded-full file:border-0 file:bg-sand-deep file:px-3 file:py-1 file:text-xs" />
+      </div>
+    </div>
+  );
+}
+
+function CarCard({ c, files }: { c: Car; files: FlightFile[] }) {
+  const pickupDay = c.pickup_at?.slice(0, 10);
+  const dropDay = c.dropoff_at?.slice(0, 10);
+  // Miettage wie bei Vermietern: angefangene 24 h zählen als Tag
+  const days =
+    c.pickup_at && c.dropoff_at
+      ? Math.max(1, Math.ceil((Date.parse(c.dropoff_at) - Date.parse(c.pickup_at)) / 86400000))
+      : null;
+  return (
+    <div className="card overflow-hidden">
+      <div className="p-5">
+        <div className="flex items-center justify-between gap-2 text-[11px] tracking-wider text-slate-500 uppercase">
+          <span>{[c.company, c.car_type].filter(Boolean).join(" · ") || "Mietwagen"}</span>
+          <span className={`chip normal-case tracking-normal ${c.booked ? "bg-sky-50 text-sky-800" : "bg-gold/10 text-[#8a6620]"}`}>
+            {c.booked ? "✓ Gebucht" : "Angebot"}
+          </span>
+        </div>
+        <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+          <div>
+            <div className="text-[11px] tracking-wider text-slate-400 uppercase">Abholung</div>
+            <div className="font-display text-xl leading-tight">{pickupDay ? fmtShort(pickupDay) : "–"}</div>
+            <div className="text-sm text-slate-500 tabular-nums">{time(c.pickup_at)}</div>
+            {c.pickup_place && <div className="mt-0.5 truncate text-xs text-slate-600">{c.pickup_place}</div>}
+          </div>
+          <div className="flex flex-col items-center text-slate-400">
+            <span className="text-xl">🚗</span>
+            {days && <span className="mt-1 text-[11px] whitespace-nowrap">{days} {days === 1 ? "Tag" : "Tage"}</span>}
+          </div>
+          <div className="text-right">
+            <div className="text-[11px] tracking-wider text-slate-400 uppercase">Rückgabe</div>
+            <div className="font-display text-xl leading-tight">{dropDay ? fmtShort(dropDay) : "–"}</div>
+            <div className="text-sm text-slate-500 tabular-nums">{time(c.dropoff_at)}</div>
+            {c.dropoff_place && <div className="mt-0.5 truncate text-xs text-slate-600">{c.dropoff_place}</div>}
+          </div>
+        </div>
+      </div>
+      <div className="relative flex items-center">
+        <span className="absolute -left-3 h-6 w-6 rounded-full border border-line bg-sand" />
+        <span className="mx-5 w-full border-t-2 border-dotted border-line" />
+        <span className="absolute -right-3 h-6 w-6 rounded-full border border-line bg-sand" />
+      </div>
+      <div className="space-y-3 p-5 pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <div className="text-slate-600">
+            {c.booking_ref ? (
+              <>
+                Code <span className="font-mono font-semibold tracking-wider text-ink">{c.booking_ref}</span>
+              </>
+            ) : (
+              <span className="text-slate-400">Kein Buchungscode</span>
+            )}
+          </div>
+          {c.price != null && (
+            <div className="text-right">
+              <div className="font-display text-xl">{fmtMoney(c.price)}</div>
+              {days && <div className="text-[11px] text-slate-400">{fmtMoney(c.price / days)} / Tag</div>}
+            </div>
+          )}
+        </div>
+        {c.notes && <p className="text-xs text-slate-500">{c.notes}</p>}
+        <div className="space-y-1.5">
+          {files.map((file) => (
+            <div key={file.id} className="flex items-center gap-2 rounded-xl bg-sand/70 px-3 py-2 text-sm">
+              <span>{file.mime?.startsWith("image/") ? "🖼" : "📄"}</span>
+              <a href={`/api/files/${file.id}`} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate font-medium text-ink hover:text-sky-700">
+                {file.filename}
+              </a>
+              {file.size != null && <span className="text-[11px] text-slate-400">{Math.max(1, Math.round(file.size / 1024))} KB</span>}
+              <a href={`/api/files/${file.id}?download`} className="text-xs text-slate-500 hover:text-ink" title="Herunterladen">⬇</a>
+              <form action={deleteFlightFile}>
+                <input type="hidden" name="id" value={file.id} />
+                <ConfirmButton className="cursor-pointer text-xs text-slate-400 hover:text-red-600" message={`${file.filename} löschen?`}>✕</ConfirmButton>
+              </form>
+            </div>
+          ))}
+          <AutoUpload action={uploadCarFiles} id={c.id} />
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          {c.link && (
+            <a href={c.link} target="_blank" rel="noopener noreferrer" className="btn-outline px-3 py-1.5 text-xs">
+              Buchung öffnen ↗
+            </a>
+          )}
+          <details className="w-full">
+            <summary className="btn-ghost px-3 py-1.5 text-xs">Bearbeiten</summary>
+            <form action={updateCar} className="pt-3">
+              <input type="hidden" name="id" value={c.id} />
+              <CarFields c={c} />
+              <SubmitButton className="btn-primary mt-3">Speichern</SubmitButton>
+            </form>
+            <form action={deleteCar} className="mt-2">
+              <input type="hidden" name="id" value={c.id} />
+              <ConfirmButton message="Mietwagen löschen?">Mietwagen löschen</ConfirmButton>
+            </form>
+          </details>
+        </div>
+      </div>
+    </div>
   );
 }

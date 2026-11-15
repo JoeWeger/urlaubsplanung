@@ -115,11 +115,43 @@ export const getActivitiesForTrip = (tripId: number) =>
     [tripId],
   );
 
-export type FlightFile = { id: number; flight_id: number; filename: string; mime: string | null; size: number | null };
+export type FlightFile = {
+  id: number;
+  flight_id: number | null;
+  car_id: number | null;
+  filename: string;
+  mime: string | null;
+  size: number | null;
+};
+
+export type Car = {
+  id: number;
+  trip_id: number;
+  company: string | null;
+  car_type: string | null;
+  pickup_place: string | null;
+  pickup_at: string | null;
+  dropoff_place: string | null;
+  dropoff_at: string | null;
+  booking_ref: string | null;
+  price: number | null;
+  link: string | null;
+  notes: string | null;
+  booked: boolean;
+};
+
+export const getCars = (tripId: number) =>
+  query<Car>("SELECT * FROM cars WHERE trip_id=$1 ORDER BY pickup_at NULLS LAST, id", [tripId]);
+
+export const getCarFiles = (tripId: number) =>
+  query<FlightFile>(
+    "SELECT ff.id, ff.flight_id, ff.car_id, ff.filename, ff.mime, ff.size FROM flight_files ff JOIN cars c ON c.id=ff.car_id WHERE c.trip_id=$1 ORDER BY ff.id",
+    [tripId],
+  );
 
 export const getFlightFiles = (tripId: number) =>
   query<FlightFile>(
-    "SELECT ff.id, ff.flight_id, ff.filename, ff.mime, ff.size FROM flight_files ff JOIN flights f ON f.id=ff.flight_id WHERE f.trip_id=$1 ORDER BY ff.id",
+    "SELECT ff.id, ff.flight_id, ff.car_id, ff.filename, ff.mime, ff.size FROM flight_files ff JOIN flights f ON f.id=ff.flight_id WHERE f.trip_id=$1 ORDER BY ff.id",
     [tripId],
   );
 

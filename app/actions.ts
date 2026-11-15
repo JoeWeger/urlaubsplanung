@@ -82,12 +82,12 @@ const flightFields = (f: FormData) => [
 
 const MAX_FILE = 4 * 1024 * 1024;
 
-async function saveFlightFiles(flightId: number, f: FormData) {
+async function saveFlightFiles(flightId: number, f: FormData, owner: "flight" | "car" = "flight") {
   const files = f.getAll("files").filter((x): x is File => x instanceof File && x.size > 0);
   for (const file of files) {
     if (file.size > MAX_FILE) throw new Error(`${file.name} ist größer als 4 MB.`);
     const buf = Buffer.from(await file.arrayBuffer());
-    await query("INSERT INTO flight_files (flight_id, filename, mime, size, data) VALUES ($1,$2,$3,$4,$5)", [
+    await query(`INSERT INTO flight_files (${owner === "car" ? "car_id" : "flight_id"}, filename, mime, size, data) VALUES ($1,$2,$3,$4,$5)`, [
       flightId,
       file.name || "Dokument.pdf",
       file.type || "application/pdf",
@@ -127,6 +127,49 @@ export async function updateFlight(f: FormData) {
 
 export async function deleteFlight(f: FormData) {
   await query("DELETE FROM flights WHERE id=$1", [id(f)]);
+  refresh();
+}
+
+/* ---------- Mietwagen ---------- */
+const carFields = (f: FormData) => [
+  s(f, "company"),
+  s(f, "car_type"),
+  s(f, "pickup_place"),
+  s(f, "pickup_at"),
+  s(f, "dropoff_place"),
+  s(f, "dropoff_at"),
+  s(f, "booking_ref"),
+  n(f, "price"),
+  s(f, "link"),
+  s(f, "notes"),
+  f.get("booked") === "on",
+];
+
+export async function createCar(f: FormData) {
+  const rows = await query<{ id: number }>(
+    "INSERT INTO cars (trip_id, company, car_type, pickup_place, pickup_at, dropoff_place, dropoff_at, booking_ref, price, link, notes, booked) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id",
+    [id(f, "trip_id"), ...carFields(f)],
+  );
+  await saveFlightFiles(rows[0].id, f, "car");
+  refresh();
+}
+
+export async function updateCar(f: FormData) {
+  await query(
+    "UPDATE cars SET company=$2, car_type=$3, pickup_place=$4, pickup_at=$5, dropoff_place=$6, dropoff_at=$7, booking_ref=$8, price=$9, link=$10, notes=$11, booked=$12 WHERE id=$1",
+    [id(f), ...carFields(f)],
+  );
+  await saveFlightFiles(id(f), f, "car");
+  refresh();
+}
+
+export async function uploadCarFiles(f: FormData) {
+  await saveFlightFiles(id(f), f, "car");
+  refresh();
+}
+
+export async function deleteCar(f: FormData) {
+  await query("DELETE FROM cars WHERE id=$1", [id(f)]);
   refresh();
 }
 
