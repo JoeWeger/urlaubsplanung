@@ -37,11 +37,12 @@ export function ImportClient() {
   if (!preview || !data) return <div className="card mx-auto max-w-xl p-6 text-sm text-slate-500">Lese Unterkunft aus …</div>;
 
   const l = preview.listing;
+  const isAct = preview.kind === "activity";
   const trips = Array.from(new Set(preview.stops.map((s) => s.trip)));
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <h1 className="font-display text-4xl font-light">Unterkunft übernehmen</h1>
+      <h1 className="font-display text-4xl font-light">{isAct ? "Aktivität übernehmen" : "Unterkunft übernehmen"}</h1>
       {preview.outdated && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
           Dein Lesezeichen ist eine ältere Version und liest weniger aus. Bitte altes Lesezeichen löschen und{" "}
@@ -64,7 +65,7 @@ export function ImportClient() {
           <div className="mt-3 flex flex-wrap gap-4 text-sm">
             <div>
               <div className="text-xs text-slate-400">Preis</div>
-              <div className="font-semibold">{fmtMoney(l.price_total ?? l.price_per_night, l.currency)}{l.price_total == null && l.price_per_night != null ? " / Nacht" : ""}</div>
+              <div className="font-semibold">{fmtMoney(l.price_total ?? l.price_per_night, l.currency)}{isAct ? (l.price_total ?? l.price_per_night) != null ? " p. P." : "" : l.price_total == null && l.price_per_night != null ? " / Nacht" : ""}</div>
             </div>
             <div>
               <div className="text-xs text-slate-400">Bewertung</div>
@@ -74,8 +75,8 @@ export function ImportClient() {
               </div>
             </div>
             <div>
-              <div className="text-xs text-slate-400">Reisedaten</div>
-              <div className="font-semibold">{l.checkin ? fmtRange(l.checkin, l.checkout) : "–"}</div>
+              <div className="text-xs text-slate-400">{isAct ? "Dauer" : "Reisedaten"}</div>
+              <div className="font-semibold">{isAct ? l.duration ?? "–" : l.checkin ? fmtRange(l.checkin, l.checkout) : "–"}</div>
             </div>
           </div>
           {l.warning && <p className="mt-2 text-xs text-amber-600">{l.warning}</p>}
@@ -118,6 +119,7 @@ export function ImportClient() {
       )}
 
       <form action={saveImport} className="card space-y-3 p-4">
+        {isAct && <input type="hidden" name="kind" value="activity" />}
         <input type="hidden" name="url" value={data.url} />
         <input type="hidden" name="html" value={data.html} />
         <h3 className="font-display text-xl">{preview.existing.length ? "…oder neu hinzufügen zu" : "Zu welchem Stopp hinzufügen?"}</h3>
@@ -138,6 +140,18 @@ export function ImportClient() {
                 </optgroup>
               ))}
             </select>
+            {isAct && (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="label">Tag (optional)</label>
+                  <input type="date" name="date" className="input" />
+                </div>
+                <div>
+                  <label className="label">Uhrzeit (optional)</label>
+                  <input type="time" name="time" className="input" />
+                </div>
+              </div>
+            )}
             <SubmitButton className="btn-primary w-full" pendingText="Speichere …">Hinzufügen</SubmitButton>
           </>
         )}

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   createActivity,
+  refreshActivity,
   deleteActivity,
   deleteHotel,
   deleteStop,
@@ -27,6 +28,7 @@ import {
 import { Cover } from "@/components/Cover";
 import { CoverImg } from "@/components/CoverImg";
 import { HotelImport } from "@/components/HotelImport";
+import { ActivityImport } from "@/components/ActivityImport";
 import { ConfirmButton, SubmitButton } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -289,12 +291,16 @@ export default async function StopPage({
               ))}
           </div>
         </div>
-        <aside>
-          <form action={createActivity} className="card sticky top-24 space-y-4 p-5">
+        <aside className="space-y-4">
+          <div className="card space-y-3 p-5">
             <div>
               <p className="eyebrow">Neu</p>
               <h3 className="font-display text-xl">Aktivität oder Idee</h3>
             </div>
+            <ActivityImport stopId={stop.id} days={days.map((d) => ({ value: d, label: fmtDate(d) }))} />
+          </div>
+          <form action={createActivity} className="card space-y-4 p-5">
+            <p className="eyebrow">…oder selbst eintragen</p>
             <input type="hidden" name="stop_id" value={stop.id} />
             <ActivityFields days={days} />
             <SubmitButton className="btn-primary w-full">Hinzufügen</SubmitButton>
@@ -565,46 +571,80 @@ function ActivityFields({ a, days }: { a?: Activity; days: string[] }) {
 }
 
 function ActivityCard({ a, days }: { a: Activity; days: string[] }) {
+  const ratingTxt =
+    a.rating != null ? (a.rating_scale === 5 || a.rating <= 5 ? a.rating.toFixed(1) : a.rating.toFixed(1)).replace(".", ",") : null;
   return (
-    <div className={`card p-4 transition ${a.done ? "opacity-55" : ""}`}>
-      <div className="flex items-start gap-3">
-        <form action={toggleActivity}>
-          <input type="hidden" name="id" value={a.id} />
-          <button
-            className={`mt-0.5 grid h-6 w-6 cursor-pointer place-items-center rounded-full border-2 text-xs transition ${a.done ? "border-sky-600 bg-sky-600 text-white" : "border-slate-300 hover:border-sky-500"}`}
-            title="Erledigt"
-          >
-            {a.done ? "✓" : ""}
-          </button>
-        </form>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h4 className={`font-display text-lg leading-snug ${a.done ? "line-through" : ""}`}>
-              {a.time && <span className="mr-2 font-sans text-sm text-sky-700 tabular-nums">{a.time.slice(0, 5)}</span>}
-              {a.title}
-            </h4>
-            {a.cost != null && <span className="text-sm text-slate-500">{fmtMoney(a.cost)}</span>}
-          </div>
-          {a.description && <p className="mt-0.5 text-sm whitespace-pre-line text-slate-600">{a.description}</p>}
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            {a.link && (
-              <a href={a.link} target="_blank" rel="noopener noreferrer" className="text-xs text-sky-700 hover:underline">
-                🔗 {hostOf(a.link)} ↗
-              </a>
+    <div className={`card overflow-hidden transition ${a.done ? "opacity-55" : ""}`}>
+      <div className="flex">
+        {a.image && (
+          <a href={a.link ?? "#"} target="_blank" rel="noopener noreferrer" className="relative hidden w-36 shrink-0 bg-sand-deep sm:block">
+            <CoverImg src={a.image} className="absolute inset-0 h-full w-full object-cover" />
+          </a>
+        )}
+        <div className="flex min-w-0 flex-1 items-start gap-3 p-4">
+          <form action={toggleActivity}>
+            <input type="hidden" name="id" value={a.id} />
+            <button
+              className={`mt-0.5 grid h-6 w-6 cursor-pointer place-items-center rounded-full border-2 text-xs transition ${a.done ? "border-sky-600 bg-sky-600 text-white" : "border-slate-300 hover:border-sky-500"}`}
+              title="Erledigt"
+            >
+              {a.done ? "✓" : ""}
+            </button>
+          </form>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <h4 className={`font-display text-lg leading-snug ${a.done ? "line-through" : ""}`}>
+                {a.time && <span className="mr-2 font-sans text-sm text-sky-700 tabular-nums">{a.time.slice(0, 5)}</span>}
+                {a.title}
+              </h4>
+              {a.cost != null && (
+                <span className="shrink-0 text-right">
+                  <span className="font-display text-lg">{fmtMoney(a.cost)}</span>
+                  {a.source && a.source !== "manual" && <span className="block text-[10px] text-slate-400">ab, pro Person</span>}
+                </span>
+              )}
+            </div>
+            {(ratingTxt || a.duration || a.source) && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+                {ratingTxt && (
+                  <span className="chip bg-ink text-paper">
+                    ★ {ratingTxt}
+                    {a.review_count != null && <span className="font-normal text-paper/70">· {a.review_count.toLocaleString("de-DE")}</span>}
+                  </span>
+                )}
+                {a.duration && <span className="chip bg-sand-deep text-slate-700">⏱ {a.duration}</span>}
+                {a.source && sourceLabel(a.source) !== a.source && <span className="chip border border-line text-slate-500">{sourceLabel(a.source)}</span>}
+              </div>
             )}
+            {a.description && <p className="mt-1.5 line-clamp-3 text-sm whitespace-pre-line text-slate-600">{a.description}</p>}
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              {a.link && (
+                <a href={a.link} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-sky-700 hover:underline">
+                  {a.source && sourceLabel(a.source) !== a.source ? `Auf ${sourceLabel(a.source)} ansehen` : hostOf(a.link)} ↗
+                </a>
+              )}
+              <details className="w-full">
+                <summary className="cursor-pointer text-xs text-slate-400 hover:text-slate-600">Bearbeiten</summary>
+                <form action={updateActivity} className="mt-2 space-y-2">
+                  <input type="hidden" name="id" value={a.id} />
+                  <ActivityFields a={a} days={days} />
+                  <SubmitButton className="btn-primary">Speichern</SubmitButton>
+                </form>
+                <div className="mt-2 flex justify-between">
+                  {a.link && (
+                    <form action={refreshActivity}>
+                      <input type="hidden" name="id" value={a.id} />
+                      <SubmitButton className="btn-ghost px-2 py-1 text-xs" pendingText="Lade …">↻ Neu auslesen</SubmitButton>
+                    </form>
+                  )}
+                  <form action={deleteActivity}>
+                    <input type="hidden" name="id" value={a.id} />
+                    <ConfirmButton className="btn-danger px-2 py-1 text-xs" message="Aktivität löschen?">Löschen</ConfirmButton>
+                  </form>
+                </div>
+              </details>
+            </div>
           </div>
-          <details className="mt-1">
-            <summary className="cursor-pointer text-xs text-slate-400 hover:text-slate-600">Bearbeiten</summary>
-            <form action={updateActivity} className="mt-2 space-y-2">
-              <input type="hidden" name="id" value={a.id} />
-              <ActivityFields a={a} days={days} />
-              <SubmitButton>Speichern</SubmitButton>
-            </form>
-            <form action={deleteActivity} className="mt-2">
-              <input type="hidden" name="id" value={a.id} />
-              <ConfirmButton className="btn-danger px-2 py-1 text-xs" message="Aktivität löschen?">Löschen</ConfirmButton>
-            </form>
-          </details>
         </div>
       </div>
     </div>

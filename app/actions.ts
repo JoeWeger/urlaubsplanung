@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { query } from "@/lib/db";
-import { listingFromHtml, scrapeListing, type ScrapedListing } from "@/lib/scrape";
+import { isActivityUrl, listingFromHtml, scrapeListing, type ScrapedListing } from "@/lib/scrape";
 import { authToken } from "@/lib/auth";
 import { BOOKMARKLET_VERSION } from "@/lib/bookmarklet";
 
@@ -259,6 +259,7 @@ export type ImportPreview = {
   existing: { id: number; stop_id: number; name: string | null; stop: string }[];
   outdated: boolean;
   debug: string;
+  kind: "hotel" | "activity";
 };
 
 const pathKey = (u: string) => {
@@ -297,7 +298,8 @@ export async function previewImport(url: string, html: string): Promise<ImportPr
     `Preisbereich: ${metaVal("x-price") || "–"}`,
     `Seitentext:\n${metaVal("x-text").slice(0, 5000) || "–"}`,
   ].join("\n\n");
-  return { listing, stops, suggestedStop: suggested, existing, outdated, debug };
+  const kind = isActivityUrl(listing.url) ? "activity" : "hotel";
+  return { listing, stops, suggestedStop: suggested, existing: kind === "hotel" ? existing : [], outdated, debug, kind };
 }
 
 export async function saveImport(f: FormData) {
@@ -305,6 +307,13 @@ export async function saveImport(f: FormData) {
   const html = String(f.get("html") ?? "");
   if (!url) return;
   const d = await listingFromHtml(url, html.slice(0, 500_000));
+  if (f.get("kind") === "activity") {
+    const stopId = id(f, "stop_id");
+    await insertActivity(stopId, d, s(f, "date"), s(f, "time"));
+    const trip = (await query<{ trip_id: number }>("SELECT trip_id FROM stops WHERE id=$1", [stopId]))[0];
+    refresh();
+    redirect(trip ? `/trips/${trip.trip_id}/stops/${stopId}` : "/");
+  }
   const existingId = Number(f.get("existing_id") || 0);
   let stopId = id(f, "stop_id");
   if (existingId) {
@@ -364,6 +373,47 @@ export async function deleteHotel(f: FormData) {
 }
 
 /* ---------- Activities ---------- */
+async function insertActivity(stopId: number, d: ScrapedListing, date: string | null, time: string | null) {
+  // Preis bei Touren meist "ab X € pro Person"
+  const cost = d.price_total ?? d.price_per_night ?? null;
+  await query(
+    `INSERT INTO activities (stop_id, title, date, time, description, link, cost, image, rating, rating_scale, review_count, source, duration)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+    [stopId, d.name ?? new URL(d.url).hostname, date, time, d.description, d.url, cost, d.image, d.rating, d.rating_scale, d.review_count, d.source, d.duration ?? null],
+  );
+}
+
+export async function importActivity(_: ImportState, f: FormData): Promise<ImportState> {
+  const stopId = id(f, "stop_id");
+  const raw = s(f, "url");
+  if (!raw) return { error: "Bitte einen Link einfügen." };
+  let url: URL;
+  try {
+    url = new URL(raw.match(/https?:\/\/\S+/)?.[0] ?? raw);
+  } catch {
+    return { error: "Das ist kein gültiger Link." };
+  }
+  const d = await scrapeListing(url.toString());
+  await insertActivity(stopId, d, s(f, "date"), s(f, "time"));
+  refresh();
+  const miss = [d.name ? null : "Titel", d.image ? null : "Foto", d.rating != null ? null : "Bewertung", d.price_per_night ?? d.price_total ? null : "Preis"].filter(Boolean);
+  return {
+    ok: true,
+    warning: miss.length ? `${miss.join(", ")} nicht gefunden – über „Bearbeiten“ ergänzen oder das Lesezeichen „➕ Urlaubsplanung“ auf der Seite nutzen.` : undefined,
+  };
+}
+
+export async function refreshActivity(f: FormData) {
+  const rows = await query<{ link: string | null }>("SELECT link FROM activities WHERE id=$1", [id(f)]);
+  if (!rows[0]?.link) return;
+  const d = await scrapeListing(rows[0].link);
+  await query(
+    `UPDATE activities SET title=COALESCE($2,title), description=COALESCE(description,$3), image=COALESCE($4,image), rating=COALESCE($5,rating),
+       rating_scale=COALESCE($6,rating_scale), review_count=COALESCE($7,review_count), cost=COALESCE(cost,$8), duration=COALESCE($9,duration), source=COALESCE(source,$10) WHERE id=$1`,
+    [id(f), d.fetched ? d.name : null, d.description, d.image, d.rating, d.rating_scale, d.review_count, d.price_total ?? d.price_per_night, d.duration ?? null, d.source],
+  );
+  refresh();
+}
 const activityFields = (f: FormData) => [
   s(f, "title") ?? "Aktivität",
   s(f, "date"),

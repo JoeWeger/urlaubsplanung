@@ -87,6 +87,20 @@ export function sourceLabel(s?: string | null): string {
       return "Expedia";
     case "hotels":
       return "Hotels.com";
+    case "getyourguide":
+      return "GetYourGuide";
+    case "viator":
+      return "Viator";
+    case "tripadvisor":
+      return "Tripadvisor";
+    case "klook":
+      return "Klook";
+    case "tiqets":
+      return "Tiqets";
+    case "musement":
+      return "Musement";
+    case "civitatis":
+      return "Civitatis";
     default:
       return s ? s : "Link";
   }

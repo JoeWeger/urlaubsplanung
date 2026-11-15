@@ -68,6 +68,12 @@ export type Activity = {
   link: string | null;
   cost: number | null;
   done: boolean;
+  image: string | null;
+  rating: number | null;
+  rating_scale: number | null;
+  review_count: number | null;
+  source: string | null;
+  duration: string | null;
 };
 
 export const getTrips = () =>

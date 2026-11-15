@@ -22,6 +22,7 @@ export type ScrapedListing = {
   checkout: string | null;
   orig_price: number | null;
   orig_currency: string | null;
+  duration?: string | null;
   fetched: boolean;
   warning?: string;
 };
@@ -34,7 +35,28 @@ export function detectSource(url: URL): string {
   if (h.includes("hotels.com")) return "hotels";
   if (h.includes("agoda.")) return "agoda";
   if (h.includes("vrbo.")) return "vrbo";
+  if (h.includes("getyourguide.")) return "getyourguide";
+  if (h.includes("viator.")) return "viator";
+  if (h.includes("tripadvisor.")) return "tripadvisor";
+  if (h.includes("klook.")) return "klook";
+  if (h.includes("tiqets.")) return "tiqets";
+  if (h.includes("musement.")) return "musement";
+  if (h.includes("civitatis.")) return "civitatis";
   return h.replace(/^www\./, "");
+}
+
+const ACTIVITY_SOURCES = ["getyourguide", "viator", "tripadvisor", "klook", "tiqets", "musement", "civitatis"];
+
+/** Link zeigt auf eine Aktivität/Tour statt auf eine Unterkunft? */
+export function isActivityUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw);
+    const src = detectSource(u);
+    if (ACTIVITY_SOURCES.includes(src)) return true;
+    return src === "airbnb" && /\/experiences\//.test(u.pathname);
+  } catch {
+    return false;
+  }
 }
 
 function decodeEntities(s: string): string {
@@ -183,6 +205,14 @@ function nameFromUrl(url: URL, source: string): string | null {
     const m = url.pathname.match(/\/rooms\/(?:plus\/)?(\d+)/);
     if (m) return `Airbnb #${m[1]}`;
   }
+  if (ACTIVITY_SOURCES.includes(source)) {
+    // z. B. /montreal-l1131/old-montreal-food-tour-t12345/ → "Old Montreal Food Tour"
+    const seg = url.pathname.split("/").filter(Boolean).reverse().find((p) => /[a-z]-[a-z]/i.test(p) && !/^[a-z]{2}(-[a-z]{2})?$/i.test(p));
+    if (seg) {
+      const words = seg.replace(/\.html?$/, "").replace(/-[a-z]?\d+$/i, "").replace(/^[a-z]?\d+-/i, "").split("-").filter(Boolean);
+      if (words.length) return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+    }
+  }
   return null;
 }
 
@@ -296,6 +326,13 @@ export function parseListingHtml(html: string, url: URL): Partial<ScrapedListing
   r.image =
     str(ld?.image) || str(ld?.photo) || meta(html, "og:image") || meta(html, "twitter:image") || meta(html, "x-img") || meta(html, "x-img2");
   r.address = addressStr(ld?.address) || meta(html, "x-address");
+
+  // Dauer (Touren/Aktivitäten), z. B. "Dauer: 3 Stunden" / "Duration 2.5 hours"
+  const durText = meta(html, "x-text") ?? html.replace(/<[^>]+>/g, " ");
+  const dur = durText.match(
+    /(?:Dauer|Duration)\s*:?\s*((?:\d+(?:[.,]\d+)?\s*(?:[-–]|bis|to)\s*)?\d+(?:[.,]\d+)?\s*(?:Stunden?|Std\.?|Minuten|Min\.?|Tage?|hours?|hrs?|minutes?|mins?|days?))/i,
+  );
+  if (dur) r.duration = dur[1].replace(/\s+/g, " ").trim();
   r.description =
     meta(html, "og:description") || meta(html, "description") || str(ld?.description);
   if (r.description && r.description.length > 400) r.description = r.description.slice(0, 397) + "…";
@@ -535,7 +572,7 @@ async function prepare(rawUrl: string): Promise<Prepared> {
     orig_price: urlPriceRaw && urlPriceRaw.currency !== urlPrice?.currency ? urlPriceRaw.total : null,
     orig_currency: urlPriceRaw && urlPriceRaw.currency !== urlPrice?.currency ? urlPriceRaw.currency : null,
     rating: null,
-    rating_scale: source === "airbnb" ? 5 : source === "booking" ? 10 : null,
+    rating_scale: source === "airbnb" || ACTIVITY_SOURCES.includes(source) ? 5 : source === "booking" ? 10 : null,
     review_count: null,
     checkin,
     checkout,
