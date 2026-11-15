@@ -26,6 +26,8 @@ type Item = {
   title: string;
   sub: string;
   defaultAmount: number | null;
+  /** Reisedatum zum Sortieren (YYYY-MM-DD[THH:MM]) */
+  date: string | null;
   payment?: Payment;
 };
 
@@ -70,6 +72,7 @@ export default async function FinanzenPage({ params }: { params: Promise<{ id: s
       title: `${f.from_airport ?? "?"} → ${f.to_airport ?? "?"}`,
       sub: [f.airline, f.flight_no, f.depart_at ? fmtShort(f.depart_at.slice(0, 10)) : null].filter(Boolean).join(" · "),
       defaultAmount: f.price,
+      date: f.depart_at,
     })),
     ...hotels
       .filter((h) => h.status === "booked")
@@ -83,6 +86,7 @@ export default async function FinanzenPage({ params }: { params: Promise<{ id: s
           title: h.name ?? "Unterkunft",
           sub: [st?.name, fmtRange(h.checkin ?? st?.start_date, h.checkout ?? st?.end_date)].filter(Boolean).join(" · "),
           defaultAmount: hotelTotal(h),
+          date: h.checkin ?? st?.start_date ?? null,
         };
       }),
     ...cars
@@ -95,6 +99,7 @@ export default async function FinanzenPage({ params }: { params: Promise<{ id: s
         title: [c.company, c.car_type].filter(Boolean).join(" · ") || "Mietwagen",
         sub: [c.pickup_place, c.pickup_at ? fmtShort(c.pickup_at.slice(0, 10)) : null].filter(Boolean).join(" · "),
         defaultAmount: c.price,
+        date: c.pickup_at,
       })),
     ...activities
       .filter((a) => a.booked)
@@ -106,6 +111,7 @@ export default async function FinanzenPage({ params }: { params: Promise<{ id: s
         title: a.title,
         sub: [stopName.get(a.stop_id)?.name, a.date ? fmtShort(a.date) : null].filter(Boolean).join(" · "),
         defaultAmount: a.cost,
+        date: a.date ? `${a.date}T${a.time ?? "99:99"}` : null,
       })),
     ...payments
       .filter((p) => p.item_type === "custom")
@@ -117,6 +123,7 @@ export default async function FinanzenPage({ params }: { params: Promise<{ id: s
         title: p.title ?? "Sonstiges",
         sub: p.note ?? "",
         defaultAmount: null,
+        date: null,
         payment: p,
       })),
   ].map((it) => (it.type === "custom" ? it : { ...it, payment: pay.get(it.key) }));
@@ -249,7 +256,10 @@ export default async function FinanzenPage({ params }: { params: Promise<{ id: s
           </div>
         )}
         {GROUPS.map((g) => {
-          const list = items.filter((it) => it.type === g.type);
+          // nach Reisedatum sortiert, Posten ohne Datum ans Ende
+          const list = items
+            .filter((it) => it.type === g.type)
+            .sort((a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999"));
           if (!list.length) return null;
           const sum = list.reduce((a, it) => a + amountOf(it), 0);
           const owes = list
