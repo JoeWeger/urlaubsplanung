@@ -180,6 +180,12 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
           <Stat label="Aktivitäten" value={fmtMoney(actCost)} />
         </div>
 
+        <div className="mt-5 flex justify-center">
+          <Link href={`/trips/${trip.id}/finanzen`} className="btn-outline gap-2 px-5 py-2.5">
+            💶 Finanzen &amp; Abrechnung <span aria-hidden>→</span>
+          </Link>
+        </div>
+
         {trip.notes && (
           <p className="font-display mx-auto mt-8 max-w-2xl text-center text-lg leading-relaxed whitespace-pre-line text-slate-600 italic">
             „{trip.notes}“

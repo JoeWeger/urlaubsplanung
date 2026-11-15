@@ -8,6 +8,7 @@ export type Trip = {
   end_date: string | null;
   color: string | null;
   notes: string | null;
+  partner_name: string | null;
 };
 
 export type Flight = {
@@ -79,6 +80,7 @@ export type Activity = {
   price_level: string | null;
   address: string | null;
   reserved: boolean | null;
+  booked: boolean | null;
 };
 
 export const getTrips = () =>
@@ -186,3 +188,20 @@ export const getStopCovers = async (tripId: number) => {
   );
   return new Map(rows.map((r) => [r.stop_id, r.image]));
 };
+
+export type Payment = {
+  id: number;
+  trip_id: number;
+  item_type: "flight" | "hotel" | "car" | "activity" | "custom" | string;
+  item_id: number | null;
+  title: string | null;
+  amount: number | null;
+  paid: boolean;
+  cancel_until: string | null;
+  partner_paid: boolean;
+  shared: boolean;
+  note: string | null;
+};
+
+export const getPayments = (tripId: number) =>
+  query<Payment>("SELECT * FROM payments WHERE trip_id=$1 ORDER BY id", [tripId]);

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   createActivity,
+  markBooked,
   refreshActivity,
   deleteActivity,
   deleteHotel,
@@ -646,7 +647,7 @@ function ActivityCard({ a, days }: { a: Activity; days: string[] }) {
                 </span>
               )}
             </div>
-            {(ratingTxt || a.duration || a.source) && (
+            {(ratingTxt || a.duration || a.source || a.booked) && (
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
                 {ratingTxt && (
                   <span className="chip bg-ink text-paper">
@@ -654,6 +655,7 @@ function ActivityCard({ a, days }: { a: Activity; days: string[] }) {
                     {a.review_count != null && <span className="font-normal text-paper/70">· {a.review_count.toLocaleString("de-DE")}</span>}
                   </span>
                 )}
+                {a.booked && <span className="chip bg-sky-700 text-white">✓ Gebucht</span>}
                 {a.duration && <span className="chip bg-sand-deep text-slate-700">⏱ {a.duration}</span>}
                 {a.source && sourceLabel(a.source) !== a.source && <span className="chip border border-line text-slate-500">{sourceLabel(a.source)}</span>}
               </div>
@@ -672,7 +674,14 @@ function ActivityCard({ a, days }: { a: Activity; days: string[] }) {
                   <ActivityFields a={a} days={days} />
                   <SubmitButton className="btn-primary">Speichern</SubmitButton>
                 </form>
-                <div className="mt-2 flex justify-between">
+                <div className="mt-2 flex flex-wrap justify-between gap-2">
+                  <form action={markBooked}>
+                    <input type="hidden" name="item_type" value="activity" />
+                    <input type="hidden" name="item_id" value={a.id} />
+                    <SubmitButton className="btn-outline px-3 py-1 text-xs" pendingText="…">
+                      {a.booked ? "Nicht gebucht" : "✓ Als gebucht markieren"}
+                    </SubmitButton>
+                  </form>
                   {a.link && (
                     <form action={refreshActivity}>
                       <input type="hidden" name="id" value={a.id} />

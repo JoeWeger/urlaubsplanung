@@ -137,6 +137,23 @@ ALTER TABLE activities ADD COLUMN IF NOT EXISTS cuisine TEXT;
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS price_level TEXT;
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS address TEXT;
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS reserved BOOLEAN DEFAULT false;
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS booked BOOLEAN DEFAULT false;
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS partner_name TEXT;
+CREATE TABLE IF NOT EXISTS payments (
+  id SERIAL PRIMARY KEY,
+  trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  item_type TEXT NOT NULL,
+  item_id INTEGER,
+  title TEXT,
+  amount DOUBLE PRECISION,
+  paid BOOLEAN DEFAULT false,
+  cancel_until TEXT,
+  partner_paid BOOLEAN DEFAULT false,
+  shared BOOLEAN DEFAULT true,
+  note TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS payments_item_idx ON payments (item_type, item_id);
 `;
 
 async function ensureSchema() {

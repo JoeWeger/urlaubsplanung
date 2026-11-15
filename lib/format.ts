@@ -143,3 +143,15 @@ export function tripColor(c?: string | null): string {
   if (!c) return "#2e6553";
   return LEGACY_COLORS[c.toLowerCase()] ?? c;
 }
+
+/** Geldbetrag mit Cent (für Abrechnungen), ganze Beträge ohne ",00" */
+export function fmtMoneyExact(v?: number | null, currency?: string | null): string {
+  if (v == null || Number.isNaN(v)) return "–";
+  const whole = Math.abs(v - Math.round(v)) < 0.005;
+  return new Intl.NumberFormat("de-DE", {
+    style: "currency",
+    currency: currency || "EUR",
+    minimumFractionDigits: whole ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(v);
+}

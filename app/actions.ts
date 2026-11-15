@@ -459,3 +459,78 @@ export async function deleteActivity(f: FormData) {
   await query("DELETE FROM activities WHERE id=$1", [id(f)]);
   refresh();
 }
+
+/* ---------- Finanzen ---------- */
+const ITEM_TYPES = ["flight", "hotel", "car", "activity", "custom"];
+const PAYMENT_COLUMNS = ["paid", "partner_paid", "shared", "cancel_until", "amount", "note", "title"] as const;
+
+/** Zahlungsstatus eines Postens setzen (legt die Zeile bei Bedarf an) */
+export async function setPayment(f: FormData) {
+  const tripId = id(f, "trip_id");
+  const itemType = s(f, "item_type");
+  if (!itemType || !ITEM_TYPES.includes(itemType)) return;
+  const itemId = f.get("item_id") ? Number(f.get("item_id")) : null;
+  const fields: Record<string, unknown> = {};
+  for (const k of ["paid", "partner_paid", "shared"]) {
+    if (f.has(k)) fields[k] = f.get(k) === "true";
+  }
+  if (f.has("cancel_until")) fields.cancel_until = s(f, "cancel_until");
+  if (f.has("amount")) fields.amount = n(f, "amount");
+  if (f.has("note")) fields.note = s(f, "note");
+  if (f.has("title")) fields.title = s(f, "title");
+  // Nur bekannte Spalten (Whitelist) – Spaltennamen kommen nie aus der Anfrage
+  const keys = PAYMENT_COLUMNS.filter((k) => k in fields);
+  if (!keys.length) return;
+  const values = keys.map((k) => fields[k]);
+  const paymentId = Number(f.get("payment_id") || 0);
+  if (paymentId) {
+    const set = keys.map((k, i) => k + "=$" + (i + 2)).join(", ");
+    await query("UPDATE payments SET " + set + " WHERE id=$1", [paymentId, ...values]);
+  } else if (itemId != null) {
+    const cols = keys.join(", ");
+    const ph = keys.map((_, i) => "$" + (i + 4)).join(",");
+    const upd = keys.map((k) => k + "=EXCLUDED." + k).join(", ");
+    await query(
+      "INSERT INTO payments (trip_id, item_type, item_id, " + cols + ") VALUES ($1,$2,$3," + ph + ") " +
+        "ON CONFLICT (item_type, item_id) DO UPDATE SET " + upd,
+      [tripId, itemType, itemId, ...values],
+    );
+  }
+  revalidatePath("/trips/" + tripId + "/finanzen");
+}
+
+export async function createExpense(f: FormData) {
+  await query(
+    "INSERT INTO payments (trip_id, item_type, title, amount, paid, cancel_until, shared) VALUES ($1,'custom',$2,$3,$4,$5,$6)",
+    [id(f, "trip_id"), s(f, "title") ?? "Sonstiges", n(f, "amount"), f.get("paid") === "on", s(f, "cancel_until"), f.get("mine_only") !== "on"],
+  );
+  revalidatePath("/trips/" + id(f, "trip_id") + "/finanzen");
+}
+
+export async function deleteExpense(f: FormData) {
+  await query("DELETE FROM payments WHERE id=$1 AND item_type='custom'", [id(f)]);
+  revalidatePath("/trips/" + id(f, "trip_id") + "/finanzen");
+}
+
+export async function setPartnerName(f: FormData) {
+  await query("UPDATE trips SET partner_name=$2 WHERE id=$1", [id(f, "trip_id"), s(f, "partner_name")]);
+  revalidatePath("/trips/" + id(f, "trip_id") + "/finanzen");
+}
+
+/** Vorschlag als gebucht übernehmen (bzw. bei Aktivitäten umschalten) */
+export async function markBooked(f: FormData) {
+  const type = s(f, "item_type");
+  const itemId = id(f, "item_id");
+  if (type === "hotel") {
+    await query(
+      "UPDATE hotels SET status='shortlist' WHERE stop_id=(SELECT stop_id FROM hotels WHERE id=$1) AND status='booked'",
+      [itemId],
+    );
+    await query("UPDATE hotels SET status='booked' WHERE id=$1", [itemId]);
+  } else if (type === "car") {
+    await query("UPDATE cars SET booked=true WHERE id=$1", [itemId]);
+  } else if (type === "activity") {
+    await query("UPDATE activities SET booked=NOT COALESCE(booked,false) WHERE id=$1", [itemId]);
+  }
+  refresh();
+}
